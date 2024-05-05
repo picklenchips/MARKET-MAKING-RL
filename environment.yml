@@ -1,0 +1,10 @@
+name: market_making_rl
+dependencies:
+  - pip
+  - python>=3.9
+  - tqdm
+  - numpy
+  - matplotlib
+  - plotly
+  - cycler
+  - pandas

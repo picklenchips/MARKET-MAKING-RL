@@ -33,8 +33,11 @@ def uFormat(number, uncertainty, round = 0, sig_figs = 4, FormatDecimals = False
     - bool FormatDecimals:  for a number 0.00X < 1e-2, option to express in "X.XXe-D" format
              for conciseness. doesnt work in math mode because '-' is taken as minus sign
     """
+    if isinstance(number,str):
+        if number == "None": return ""
+    if isinstance(uncertainty,str):
+        if uncertainty == "None": uncertainty = 0
     num = str(number); err = str(uncertainty)
-    
     sigFigsMode = not uncertainty    # UNCERTAINTY ZERO: IN SIG FIGS MODE
     if sigFigsMode and not sig_figs: # nothing to format
         return num
@@ -53,6 +56,8 @@ def uFormat(number, uncertainty, round = 0, sig_figs = 4, FormatDecimals = False
     if 'e' in num:
         ff = num.split('e')
         num = ff[0]
+        if not len(ff[1]):  # handles num="None"
+            return ''
         ni = -int(ff[1])
     if 'e' in err:
         ff = err.split('e')

@@ -10,10 +10,12 @@ class OrderBook():
         self.midprice = 0
         self.spread = 0
     
-    def market_buy(self, n_stocks):
+    def market_buy(self, nstocks):
+        """Buy (up to) nstocks limit-sell orders"""
         pass
 
-    def market_sell(self):
+    def market_sell(self, nstocks):
+        """Sell (up to) nstocks limit-buy orders"""
         pass
 
     def limit_buy(self):

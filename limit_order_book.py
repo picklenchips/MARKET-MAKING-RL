@@ -23,6 +23,9 @@ class LimitOrder():
 # should we change buying and selling to be the same action, but 
 # with a negative price??
 
+#TODO: any use case for returning the bought and sold arrays for market orders?
+#      : could just change to total price spent or something
+#TODO: change buying and selling to be the same action?
 class OrderBook():
     def __init__(self):
         # keep track of limit orders
@@ -74,7 +77,6 @@ class OrderBook():
     def market_sell(self, nstocks, minprice=None):
         """Sell (up to) nstocks stocks to highest-priced limit-buy orders
         optionally, only sell stocks valued above min price"""
-        #TODO: maybe delete n_sold tracking?
         sold = []; n_sold = 0; do_update = False
         while nstocks > 0 and len(self.buys):
             if minprice:  # only sell stocks greater than min price

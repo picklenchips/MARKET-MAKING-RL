@@ -132,23 +132,25 @@ class OrderBook():
         plt.legend()
         plt.show()
 
-# test orderbook eating properties
-N = 10
-mean_buy = 100
-mean_sell = 100
-std_buy = 30
-std_sell = 30
-buy_orders = (np.random.normal(size=(N,))*std_buy + mean_buy).astype(int)
-sell_orders = (np.random.normal(size=(N,))*std_sell + mean_sell).astype(int)
+# we getting Pythonic up in this
+if __name__ == "__main__":
+    # test orderbook eating properties
+    N = 10
+    mean_buy = 100
+    mean_sell = 100
+    std_buy = 30
+    std_sell = 30
+    buy_orders = (np.random.normal(size=(N,))*std_buy + mean_buy).astype(int)
+    sell_orders = (np.random.normal(size=(N,))*std_sell + mean_sell).astype(int)
 
-book = OrderBook()
+    book = OrderBook()
 
-# alternate buy, sell orders
-for i in range(N):
-    n = np.random.randint(1,10)
-    print(f'placing buy order of (${buy_orders[i]},{n}). ')
-    book.limit_buy(n,buy_orders[i])
-    n = np.random.randint(1,10)
-    print(f'placing sell order of (${sell_orders[i]},{n}). ')
-    book.limit_sell(n,sell_orders[i])
-    book.plot()
+    # alternate buy, sell orders
+    for i in range(N):
+        n = np.random.randint(1,10)
+        print(f'placing buy order of (${buy_orders[i]},{n}). ')
+        book.limit_buy(n,buy_orders[i])
+        n = np.random.randint(1,10)
+        print(f'placing sell order of (${sell_orders[i]},{n}). ')
+        book.limit_sell(n,sell_orders[i])
+        book.plot()

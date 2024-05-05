@@ -27,6 +27,13 @@ class LimitOrder():
 #      : could just change to total price spent or something
 #TODO: change buying and selling to be the same action?
 class OrderBook():
+    """
+    Creates a limit-order book with four distinct actions:
+    - buy: market-buy # of stocks cheaper than some maximum price
+    - sell: market-sell # of stocks more expensive than some minimum price 
+    - bid: create a limit order to buy # stocks at some price
+    - ask: create a limit order to sell # stocks at some price 
+    """
     def __init__(self):
         # keep track of limit orders
         self.buys = []
@@ -52,7 +59,7 @@ class OrderBook():
         elif len(self.buys):
             self.midprice = -self.buys[0][0]
 
-    def market_buy(self, nstocks, maxprice=None):
+    def buy(self, nstocks, maxprice=None):
         """Buy (up to) nstocks stocks to lowest-priced limit-sell orders
         returns tuple of int: num stocks bought, 
                          list of (price, n_stocks) orders that have been bought
@@ -74,7 +81,7 @@ class OrderBook():
         if do_update: self.recalculate()
         return n_bought, bought
 
-    def market_sell(self, nstocks, minprice=None):
+    def sell(self, nstocks, minprice=None):
         """Sell (up to) nstocks stocks to highest-priced limit-buy orders
         optionally, only sell stocks valued above min price"""
         sold = []; n_sold = 0; do_update = False
@@ -95,7 +102,7 @@ class OrderBook():
         if do_update: self.recalculate()
         return n_sold, sold
 
-    def limit_buy(self, nstocks, price):
+    def bid(self, nstocks, price):
         """Add a limit-buy order. Sorted highest-to-lowest"""
         # buying higher than lowest sell -> market buy instead
         if len(self.sells):
@@ -108,7 +115,7 @@ class OrderBook():
         if -price == self.buys[0][0]:
             self.recalculate()
 
-    def limit_sell(self, nstocks, price):
+    def ask(self, nstocks, price):
         """Add a limit-sell order"""
         # selling lower than highest buy order -> sell some now!
         if len(self.buys):
@@ -151,8 +158,8 @@ if __name__ == "__main__":
     for i in range(N):
         n = np.random.randint(1,10)
         print(f'placing buy order of (${buy_orders[i]},{n}). ')
-        book.limit_buy(n,buy_orders[i])
+        book.bid(n,buy_orders[i])
         n = np.random.randint(1,10)
         print(f'placing sell order of (${sell_orders[i]},{n}). ')
-        book.limit_sell(n,sell_orders[i])
+        book.ask(n,sell_orders[i])
         book.plot()

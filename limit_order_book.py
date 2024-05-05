@@ -20,6 +20,9 @@ class LimitOrder():
 # that is, we ignore the case that a buy and sell limit order have the same 
 # exact price
 
+# should we change buying and selling to be the same action, but 
+# with a negative price??
+
 class OrderBook():
     def __init__(self):
         # keep track of limit orders

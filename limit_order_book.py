@@ -8,24 +8,20 @@ hexcolors = ['DC267F', '648FFF', 'FE6100', '785EF0', 'FFB000', '009E73', '3DDBD9
 mpl.rcParams['axes.prop_cycle'] = cycler('color', [mpl.colors.to_rgba('#' + c) for c in hexcolors])
 from util import uFormat
 
-# 
+"""
+Follow the naive approach taken in 
+https://math.nyu.edu/~avellane/HighFrequencyTrading.pdf 
+to define the order book environment
+"""
+
 class LimitOrder():
     def __init__(self, nstocks, price):
         self.n = nstocks
         self.p = price
 
-# assume midprice is just average between two sell orders? 
-# that is, not weighted by number of things in each order
-# assume that limit orders can only be bought and sold by market orders
-# that is, we ignore the case that a buy and sell limit order have the same 
-# exact price
-
 # should we change buying and selling to be the same action, but 
 # with a negative price??
 
-#TODO: any use case for returning the bought and sold arrays for market orders?
-#      : could just change to total price spent or something
-#TODO: change buying and selling to be the same action?
 class OrderBook():
     """
     Creates a limit-order book with four distinct actions:

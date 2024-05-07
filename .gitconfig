@@ -2,8 +2,12 @@
 # I don't understand it all yet but its a good base that prevents 
 # really big overwrites with merge and pull
 
+# make sure to set your name and email
+# or change useConfigOnly to false
+
 # stolen from Henré Botha via Reddit post at 
 # https://github.com/henrebotha/dotfiles/blob/main/git/dot-gitconfig 
+
 
 # vim: set ts=2 sw=2 noet filetype=gitconfig:
 

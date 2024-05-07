@@ -1,0 +1,185 @@
+# This is an amazing git config with TONS of features
+# I don't understand it all yet but its a good base that prevents 
+# really big overwrites with merge and pull
+
+# stolen from Henré Botha via Reddit post at 
+# https://github.com/henrebotha/dotfiles/blob/main/git/dot-gitconfig 
+
+# vim: set ts=2 sw=2 noet filetype=gitconfig:
+
+[core]
+	compression = 0
+	autocrlf = input
+	excludesfile = ~/.gitignore_global
+	ignorecase = false
+	editor = vim -X
+	; -X:           don't talk to X11 on startup
+	; -R:           read only mode
+	; -n:           don't use a swap file
+	; -c:           run command on start, after autocmd/modeline
+	pager = ifne vim -X -R - -n -c 'set filetype=git nowrap noro'
+	sparseCheckoutCone = 1
+[user]
+	name = YOUR_NAME_HERE
+	useConfigOnly = true ; force me to set email in repo local config
+[advice]
+	detachedHead = false
+[pager]
+	log = less
+	branch = less
+[color]
+	; Vim/Kakoune can syntax highlight just fine on their own, and don't understand
+	; colour codes, so we disable the colouring when using Vim-paged commands
+	diff = false
+	show = false
+[init]
+	defaultBranch = main
+[push]
+	default = current
+[diff]
+	colorMoved = true ; give moved lines their own colour. Only works when paging with colour
+	compactionheuristic = true
+	mnemonicprefix = true ; replace a/b with (i)ndex/(c)ommit/(w)orking tree
+	renames = copies ; detect file copies as a type of rename
+[grep]
+	lineNumber = true
+	extendedRegexp = true
+	fallbackToNoIndex = true
+[blame]
+	ignoreRevsFile = .git-blame-ignore-revs
+	markIgnoredLines = true
+	markUnblamableLines = true
+[fetch]
+	prune = true
+	writeCommitGraph = true
+[merge]
+	conflictstyle = diff3  # shows older commits to resolve differences
+[pull]
+	ff = only  # only pulls non-conflicting things
+[alias]
+	# Display all aliases :)
+	aliases = ! git config --list | awk '/alias/{ print $1 }' | perl -pe 's/alias\\.//g' | perl -pe 's/=.+//g'
+
+	# Short aliases for simple commands
+	a = add
+	ap = -c color.diff=true add --patch
+	b = branch
+	ba = branch -a
+	c = commit -v
+	car = commit --amend --no-edit
+	cmsg = commit -m
+	co = checkout
+	dc = diff --word-diff-regex=.
+	dca = diff --cached
+	dcac = diff --cached --word-diff-regex=.
+	dcaw = diff --cached --word-diff
+	dw = diff --word-diff
+	f = fetch
+	fa = fetch --all --prune
+	fp = fetch --prune
+	l = -c color.diff=true log
+	lg = -c color.diff=true log --oneline --decorate --graph
+	lga = -c color.diff=true log --oneline --decorate --graph --all
+	lgb = -c color.diff=true log --oneline --decorate --graph --branches
+	lo = -c color.diff=true log --oneline --decorate
+	mff = merge --ff-only --no-stat
+	# Safer alternative to --force
+	pf = push --force-with-lease
+	r = remote
+	ra = remote add
+	rb = ! "f() { \
+		git rebase -i `git merge-base HEAD $1`; \
+	}; f"
+	; rbm = ! "git rebase -i `git merge-base HEAD master`"
+	; rbt = ! "git rebase -i `git merge-base HEAD trunk`"
+	re = restore
+	rmv = remote rename
+	rrm = remote remove
+	rv = remote -v
+	s = status --short --branch
+	sc = show --compact-summary
+	sdc = show --word-diff-regex=.
+	sdw = show --word-diff
+	sp = sparse-checkout
+	st = status
+	sw = switch
+	wk = worktree
+
+    # "creates a graph of your repo's orphaned commits your CLI"
+	orphan = ! git log --pretty=oneline --abbrev-commit --graph --decorate `git reflog | cut -d \" \" -f 1`
+
+	# Hide files from git
+	hidden = ! git ls-files -v . | grep ^S | awk '{ print $2 }'
+	hide = update-index --skip-worktree
+	unhide = update-index --no-skip-worktree
+	unhide-all = ! cd $(git rev-parse --show-toplevel || echo ".") && git hidden | xargs git unhide
+
+	# Show diff while trying to ignore changes matching a pattern. Won't ignore
+	# non-matching changes that are tight against matching changes, e.g. git
+	# diffig TODO will not ignore a change that has a TODO line followed by a
+	# code line.
+	diffig = diff -U1 -I
+
+	# # Alternative to git status - also shows hidden files! Currently broken...
+	# s = ! sh -c 'git status $1' - && [ '$git hidden | wc -l' != '0' ] && echo '\n  Hidden files present!'
+
+	hist = log --pretty=format:\"%h %ad | %s%d [%an]\" --graph --date=short
+
+	wip = ! "f() { \
+		git add -A; \
+		git rm $(git ls-files --deleted) 2> /dev/null; \
+		git commit --no-verify -m '--wip-- [skip ci]'; \
+	}; f"
+	unwip = ! "f() { \
+		git log -n 1 | grep -q -c \"\\-\\-wip\\-\\-\" && git reset HEAD~1; \
+	}; f"
+	wips = ! git branch -v --no-abbrev | grep '\\-\\-wip\\-\\-'
+
+	email = config --local user.email
+
+	intend = add -N
+	unintend = rm --cached
+
+	# Mnemonic: "diverge"
+	di = ! "f() { \
+		git -c color.diff=true log --oneline --graph --decorate HEAD $1 `git merge-base HEAD $1`^!; \
+	}; f"
+
+	# Worktree workflow
+	wkls = worktree list
+
+	# Usage:
+	# git wkadd dirname branchname
+	# We have to unset the upstream if $2 is a remote branch, otherwise $1 will
+	# track $2, which will affect pushing
+	wkadd = ! "f() { \n\
+		git worktree add ../$(echo \"$1\" | sed \"s./.--.g\") $2 -b $1 && \n\
+		echo \"$2\" | grep -qv \"^origin/\" || git branch --unset-upstream $1; \n\
+		}; f"
+	wkrb = ! "f() { \n\
+		git fetch --prune && git rebase $1; \n\
+		}; f"
+	wkrm = ! "test -f .git && \n\
+	  branch=$(git symbolic-ref --short HEAD) && \n\
+		default_branch=$(git symbolic-ref --short refs/remotes/origin/HEAD) && \n\
+		test $(git merge-base $default_branch HEAD) = $(git rev-parse HEAD) && \n\
+		git checkout --detach && \n\
+		git branch -d $branch && git worktree remove ."
+	wkrmf = ! "test -f .git && \n\
+	  branch=$(git symbolic-ref --short HEAD) && \n\
+		git checkout --detach && \n\
+		git branch -D $branch && git worktree remove ."
+
+	# Copy the hash of the given ref to the system clipboard
+	cpref = ! "f() { git rev-parse --short $1 | xclip -sel clip;}; f"
+
+	# Get the "name" of the repo directory. This is the namespace (usually the
+	# org name) & repo name from the first remote URL listed by git remote -v.
+	# This will probably break if there is no remote (easy to fix), or if the
+	# remote URL doesn't match the typical $host/$org/$repo.git pattern.
+	repo-name = ! "[ -n \"$(git remote)\" ] && git remote -v | head -1 | cut -d ' ' -f 1 | grep -E --only-matching '([^:/ ]+/[^/ ]+)(\\.git)?$' | sed 's/\\.git$//' || basename $(pwd)"
+	branch-name = ! "git rev-parse HEAD >/dev/null 2>&1 && git rev-parse --abbrev-ref HEAD || echo '???no-branch???'"
+	repo-and-branch-name = ! "echo $(git repo-name)':'$(git branch-name)"
+
+	# Graph the divergence between two histories from their shared parent onwards.
+	diverge = ! "git lg $(git merge-base $1 $2)^..$1 $(git merge-base $1 $2)^..$2"

@@ -1,3 +1,4 @@
+# add any modules we use! 
 name: market_making_rl
 dependencies:
   - python>=3.9
@@ -6,3 +7,4 @@ dependencies:
   - cycler
   - glob
   - heapq
+  - pandas

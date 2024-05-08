@@ -59,7 +59,7 @@
 [merge]
 	conflictstyle = diff3  # shows older commits to resolve differences
 [pull]
-	ff = only  # only pulls non-conflicting things
+	rebase = false  # asdf
 [alias]
 	# Display all aliases :)
 	aliases = ! git config --list | awk '/alias/{ print $1 }' | perl -pe 's/alias\\.//g' | perl -pe 's/=.+//g'

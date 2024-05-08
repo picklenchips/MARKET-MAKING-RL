@@ -68,3 +68,4 @@ def res_price(s, q, t):  # reservation / indifference price
 
 
 
+

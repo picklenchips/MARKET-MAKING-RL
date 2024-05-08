@@ -28,13 +28,44 @@ ASSUMPTIONS:
 """
 
 """
+global:
+ - gamma = discount price?
+ - sigma = brownian motion variance
+ - terminal time T at which stock dies or sumn
+
 'frozen inventory' strategy
 inactive trader
 no limit orders and only holds inventory of q stocks until T
+value function given by v(x,s,q,t), where
+ - x = initial wealth, q = nstocks, t = time
+ - s = initial stock value, = midprice
 """
 
-def frozen_value(initial_wealth, stock_val, nstocks, time, 
-                 gamma, sigma, terminal_time):
+
+
+gamma = sigma = 1; T = 1000
+# v(x,s,q,t), 
+# x = initial wealth, s = initial stock value, q = nstocks, t = time
+def frozen_value(initial_wealth, stock_val, nstocks, time):
     first = -np.exp(-gamma*(initial_wealth+nstocks*stock_val))
-    second = np.exp((gamma*nstocks*sigma)**2 * (terminal_time - time) / 2)
+    second = np.exp((gamma*nstocks*sigma)**2 * (T - time) / 2)
     return first * second
+
+"""
+reservation_bid is price that makes agent indifferent to buy a stock
+v(x-r^b(s,q,t), s, q+1, t) >= v(x,s,q,t)
+reservation_ask is price that makes agent indifferent to sell a stock
+v(x+r^a(s,q,t), s, q-1, t) >= v(x,s,q,t)
+where r^b, r^a is bid, ask price
+"""
+def res_ask_price(s,q,t):
+    return s + (1-2*q) * gamma * sigma**2 * (T-t)
+def res_bid_price(s,q,t):
+    return s - (1+2*q) * gamma * sigma**2 * (T-t)
+# avg between bid and ask
+def res_price(s, q, t):  # reservation / indifference price
+    return s - q * gamma * sigma**2 * (T-t)
+
+
+
+

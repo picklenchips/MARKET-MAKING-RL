@@ -25,6 +25,7 @@
 	sparseCheckoutCone = 1
 [user]
 	name = YOUR_NAME_HERE
+	email = YOUR_EMAIL_HERE
 	useConfigOnly = true ; force me to set email in repo local config
 [advice]
 	detachedHead = false
@@ -59,7 +60,9 @@
 [merge]
 	conflictstyle = diff3  # shows older commits to resolve differences
 [pull]
-	rebase = false  # asdf
+	rebase = false  # merge conflicting pulls! 
+	#ff = only      # will only fast-forward
+	#
 [alias]
 	# Display all aliases :)
 	aliases = ! git config --list | awk '/alias/{ print $1 }' | perl -pe 's/alias\\.//g' | perl -pe 's/=.+//g'

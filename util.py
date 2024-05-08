@@ -12,6 +12,7 @@ from tqdm import tqdm
 hexcolors = ['DC267F', '648FFF', 'FE6100', '785EF0', 'FFB000', '009E73', '3DDBD9', '808080']
 mpl.rcParams['axes.prop_cycle'] = cycler('color', [mpl.colors.to_rgba('#' + c) for c in hexcolors])
 
+FIGSIZE = (10,6)
 SAVE_DIR = os.getcwd()+"/"
 SAVE_EXT = ".png"
 np.set_printoptions(precision=4)

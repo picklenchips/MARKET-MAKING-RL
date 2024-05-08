@@ -86,11 +86,7 @@ X = wealth of agent. N_t^a is # stocks sold, $N_t^b$ is # stocks bought
 $dX_t = p^a dN_t^a - p^b dN_t^b$
 
 # stocks held at time $t$ is q_t
-objective is
-$u(s, x, q, t) = \max_{\delta^a,\delta^b} 
-\mathbb{E}_t \left[-\exp\left(-\gamma(X_T + q_T S_T)\right)\right]$
 """
-
 
 """
 model trading intensity.

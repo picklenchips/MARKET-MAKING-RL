@@ -1,4 +1,5 @@
 import numpy as np
+from limit_order_book import OrderBook, LimitOrder
 
 """
 @article{2006_avellaneda,
@@ -92,3 +93,9 @@ $dX_t = p^a dN_t^a - p^b dN_t^b$
 model trading intensity.
 assume constant frequency f^Q(x)\alpha x^{-1-\alpha}
 """
+
+class MarketMaker():
+    def __init__(self, nstocks, cash):
+        self.n = nstocks
+        self.cash = cash
+        self.book = OrderBook()

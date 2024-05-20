@@ -1,6 +1,7 @@
 import numpy as np
 from util import mpl, plt, FIGSIZE, uFormat
 
+import stochastic.processes as processes
 import stochastic.processes.noise as noise
 GaussianNoise = noise.GaussianNoise
 from stochastic.processes.continuous.brownian_motion import BrownianMotion
@@ -10,6 +11,11 @@ n_times = 100000
 max_t = 1
 times = np.linspace(0, max_t, n_times+1)
 fig, ax = plt.subplots(figsize=FIGSIZE)
+
+
+lamb = 1
+poiss = processes.PoissonProcess(rate=lamb)
+poiss.sample(n_times, max_t)
 
 def line(x, m, b): return m*x + b
 i = 0

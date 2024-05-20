@@ -32,20 +32,23 @@ class OrderBook():
         self.asks = []
         # and their relevant pricing dynamics
         self.midprice = None
-        self.spread = None
-        self.delta_b = None
-        self.delta_a = None
+        self.spread   = None
+        self.delta_b  = None
+        self.delta_a  = None
     
     def recalculate(self):
         """ Recalculate self.midprice and self.spread """
-        self.spread = self.midprice = None 
+        self.spread = self.midprice = None
+        self.delta_b = self.delta_a = None
         if len(self.asks):
             self.midprice = self.asks[0][0]
             if len(self.bids):
                 lowest_sell = self.asks[0][0]
                 highest_buy = -self.bids[0][0]
-                self.midprice = (lowest_sell+highest_buy)/2
-                self.spread = lowest_sell-highest_buy
+                self.midprice = (lowest_sell + highest_buy)/2
+                self.spread = lowest_sell - highest_buy
+                self.delta_b = self.midprice - highest_buy
+                self.delta_a = lowest_sell - self.midprice
                 if self.spread < 0:
                     print("ERROR: unrealistic spread!!")
         elif len(self.bids):
@@ -134,7 +137,6 @@ class OrderBook():
         plt.title(title)
         plt.legend(loc='upper center',ncol=2)
         plt.show()
-
 
 # we getting Pythonic up in this
 if __name__ == "__main__":

@@ -1,4 +1,5 @@
 from util import uFormat, mpl, plt, np
+from util import FIGSIZE, SAVEDIR, SAVEEXT
 import heapq  # priority queue
 
 """
@@ -59,14 +60,17 @@ class OrderBook():
         returns tuple of int: num stocks bought, 
                          list of (price, n_stocks) orders that have been bought
         optionally, only buy stocks valued below max price"""
-        bought = []; n_bought = 0; do_update = False
+        n_bought = total_bought = 0; do_update = False
+        # bought = []
         while nstocks > 0 and len(self.asks):
             if maxprice:  # only buy stocks less than max price
                 if self.asks[0][0] > maxprice: break
             # buy up to nstocks stocks from the n available at this price
             price, n = heapq.heappop(self.asks)
-            n_bought += min(n, nstocks)
-            bought.append((price, min(n, nstocks)))
+            n_bought_rn = min(n, nstocks)
+            n_bought += n_bought_rn
+            #bought.append((price, n_bought_rn))
+            total_bought += price*n_bought_rn
             # place remaining portion of limit order back
             if nstocks < n: 
                 heapq.heappush(self.asks, (price, n-nstocks))
@@ -74,20 +78,23 @@ class OrderBook():
                 do_update = True
             nstocks -= n
         if do_update: self.recalculate()
-        return n_bought, bought
+        return n_bought, total_bought
 
     def sell(self, nstocks, minprice=None):
         """Sell (up to) nstocks stocks to highest-priced limit-buy orders
         optionally, only sell stocks valued above min price"""
-        sold = []; n_sold = 0; do_update = False
+        n_sold = total_sold = 0; do_update = False
+        #sold = []  # keep track of orders sold
         while nstocks > 0 and len(self.bids):
             if minprice:  # only sell stocks greater than min price
                 if -self.bids[0][0] < minprice: break
             price, n = heapq.heappop(self.bids)
             price = -price  # convert back to normal price
             # sell up to nstocks stocks to the n available at this price
-            n_sold += min(n, nstocks)
-            sold.append((price,min(n, nstocks)))
+            n_sold_rn = min(n, nstocks)
+            n_sold += n_sold_rn
+            #sold.append((price,n_sold_rn))
+            total_sold += price*n_sold_rn
             # place remaining portion of limit order back
             if nstocks < n: 
                 heapq.heappush(self.bids,(-price, n-nstocks))
@@ -95,7 +102,7 @@ class OrderBook():
                 do_update = True
             nstocks -= n
         if do_update: self.recalculate()
-        return n_sold, sold
+        return n_sold, total_sold
 
     def bid(self, nstocks, price):
         """Add a limit-buy order. Sorted highest-to-lowest"""
@@ -125,15 +132,26 @@ class OrderBook():
     
     def plot(self):
         """Make histogram of current limit-orders"""
-        fig, ax = plt.subplots()
+        fig, ax = plt.subplots(figsize=FIGSIZE)
         ax.set(xlabel='Price per Share',ylabel='Volume')
-        ax.bar([-b[0] for b in self.bids],[b[1] for b in self.bids],label='Bids',edgecolor='black',linewidth=0.5)
-        ax.bar([s[0] for s in self.asks],[s[1] for s in self.asks],label='Asks',edgecolor='black',linewidth=0.5)
+        # normalize the bin widths
+        nbins = 100  # total nbins across range of data
+        highest_ask = max([a[0] for a in self.asks])
+        lowest_bid  = min([-b[0] for b in self.bids])
+        pricerange = highest_ask - lowest_bid
+        brange = -self.bids[0][0] - lowest_bid
+        arange = highest_ask - self.asks[0][0]
+        bbins = int(nbins*brange/pricerange)
+        abins = int(nbins*arange/pricerange)
+        # plot the bids and asks
+        ax.hist([-b[0] for b in self.bids], weights = [b[1] for b in self.bids], bins=bbins,label='Bids',edgecolor='black',linewidth=0.5)
+        ax.hist([s[0] for s in self.asks], weights = [s[1] for s in self.asks], bins=abins,label='Asks',edgecolor='black',linewidth=0.5)
+        # set plotting stuff
         title = "Order Book"
         if self.midprice:  # add dashed line for midprice
-            lowx, highx = ax.get_ylim()
-            ax.plot([self.midprice,self.midprice],[lowx,highx*0.8],linestyle='dashed',color='black')
-            title += f" - midprice = {uFormat(self.midprice,0)}, spread = {uFormat(self.spread,0)}"
+            lowy, highy = ax.get_ylim()
+            ax.plot([self.midprice,self.midprice],[lowy,highy*0.8],linestyle='dashed',color='black')
+            title += f" - midprice = {uFormat(self.midprice,0)}, spread = ({uFormat(self.delta_b,0)}, {uFormat(self.delta_a,0)})"
         plt.title(title)
         plt.legend(loc='upper center',ncol=2)
         plt.show()

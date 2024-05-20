@@ -10,16 +10,18 @@ from tqdm import tqdm
 
 """
 set all utility functions! 
-- import mpl from util in order to 
+- import mpl from util in order to get the right colors
+- import np from util in order to get the right print options
 """
 
-#           |   Red  |   Blue  |  Orange |  Purple | Yellow  |   Green |   Teal  | Grey
-hexcolors = ['DC267F', '648FFF', 'FE6100', '785EF0', 'FFB000', '009E73', '3DDBD9', '808080']
+# blue = bids, red = asks
+#           |   Blue  |   Red  |  Orange |  Purple | Yellow  |   Green |   Teal  | Grey
+hexcolors = ['648FFF', 'DC267F', 'FE6100', '785EF0', 'FFB000', '009E73', '3DDBD9', '808080']
 mpl.rcParams['axes.prop_cycle'] = cycler('color', [mpl.colors.to_rgba('#' + c) for c in hexcolors])
 
 FIGSIZE = (10,6)
-SAVE_DIR = os.getcwd()+"/"
-SAVE_EXT = ".png"
+SAVEDIR = os.getcwd()+"/"
+SAVEEXT = ".png"
 np.set_printoptions(precision=4)
 
 def uFormat(number, uncertainty, round = 0, sig_figs = 4, FormatDecimals = False):

@@ -1,5 +1,5 @@
-import numpy as np
 from limit_order_book import OrderBook, LimitOrder
+from util import uFormat, mpl, plt, np
 
 """
 @article{2006_avellaneda,
@@ -95,7 +95,113 @@ assume constant frequency f^Q(x)\alpha x^{-1-\alpha}
 """
 
 class MarketMaker():
-    def __init__(self, nstocks, cash):
+    def __init__(self, nstocks, wealth):
         self.n = nstocks
-        self.cash = cash
+        self.wealth = wealth
         self.book = OrderBook()
+        self.actions = ['buy', 'sell', 'bid', 'ask']
+        # --- market order parameters --- #
+        # alpha is 1.53 for US stocks and 1.4 for NASDAQ stocks
+        self.alpha = 1.53
+        self.Lambda_b = 20
+        self.Lambda_s = 20
+        self.K_b = 1
+        self.K_s = 1
+        # action stuff
+        self.sigma = 1
+        self.gamma = 1
+        self.terminal_time = 1000
+        self.dt = 1   # millisecond
+
+    
+    def act(self, action, nstocks, price=None):
+        if action == 'buy':
+            n_bought, bought = self.book.buy(nstocks)
+            return bought
+        elif action == 'sell':
+            n_sold, sold = self.book.sell(nstocks)
+            return sold
+        if price is None:
+            raise ValueError("Price must be specified for 'bid' and 'ask' actions")
+        if action == 'bid':
+            self.book.bid(nstocks, price)
+        elif action == 'ask':
+            self.book.ask(nstocks, price)
+        else:
+            raise ValueError(f"Invalid action {action}")
+    
+    def lambda_buy(self, delta_a):
+        return (self.Lambda_b / self.alpha) * np.exp(-delta_a * self.alpha * self.K_b)
+
+    def lambda_sell(self, delta_b):
+        return (self.Lambda_s / self.alpha) * np.exp(-delta_b * self.alpha * self.K_s)
+    
+    # objective with no inventory dynamics?
+    def frozen_value(self, initial_wealth, stock_val, nstocks, time):
+        first = -np.exp(-gamma*(initial_wealth + nstocks*stock_val))
+        second = np.exp((gamma*nstocks*sigma)**2 * (self.terminal_time - time) / 2)
+        return first * second
+
+    def step(self):
+        # initial state of order book
+        initial_midprice = 100
+        initial_spread = 10
+        initial_num_stocks = 100
+        self.book.bid(initial_num_stocks//2, initial_midprice-initial_spread/2)
+        self.book.ask(initial_num_stocks-initial_num_stocks//2, initial_midprice+initial_spread/2)
+        # random event of market order
+        n_times = int(self.terminal_time / self.dt)
+        wealth = np.zeros(n_times+1)
+        wealth[0] = self.wealth
+        inventory = np.zeros(n_times+1)
+        inventory[0] = self.n
+        midprices = np.zeros(n_times+1)
+        midprices[0] = initial_midprice
+        for t in range(1,n_times+1):
+            mid = self.book.midprice
+            delta_b = self.book.delta_b
+            delta_a = self.book.delta_a
+            # take action after observing state
+            bid_price = np.random.normal(mid - delta_b, delta_b/4)
+            ask_price = np.random.normal(mid + delta_a, delta_a/4)
+            # makes sure that bid price is less than ask price always?
+            # only needed for larger variance in the prices that may cross
+            #bid_price = np.clip(bid_price, 0, min(mid + delta_a, ask_price))
+            #ask_price = np.clip(ask_price, max(bid_price, mid - delta_b), np.inf)
+            #self.book.plot()
+            n_highest_bid = self.book.bids[0][1]
+            n_lowest_ask = self.book.asks[0][1]
+            n_bid = np.random.poisson(n_highest_bid)
+            n_ask = np.random.poisson(n_lowest_ask)
+            self.book.bid(n_bid, bid_price)
+            self.book.ask(n_ask, ask_price)
+            # --- MARKET ACTIONS --- #
+            # get random number of buys, sells
+            nbuy  = np.random.poisson(self.lambda_buy(delta_a))
+            nsell = np.random.poisson(self.lambda_sell(delta_b))
+            n_ask_lift, bought = self.book.buy(nbuy)
+            n_bid_hit, sold = self.book.sell(nsell)
+            # update wealth
+            # make money from people buying, lose money from people selling
+            wealth[t] = wealth[t-1] + bought - sold
+            inventory[t] = inventory[t-1] + n_bid_hit - n_ask_lift
+            # scaled random walk
+            midprices[t] = self.book.midprice
+
+        self.book.plot()
+        fig, axs = plt.subplots(3,1, figsize=(10,8))
+        axs[0].set_title("Wealth")
+        axs[1].set_title("Inventory")
+        axs[2].set_title("Midprice") 
+        axs[2].set(xlabel="Time")
+        axs[1].set(ylabel='Number of Stocks')
+        axs[0].plot(wealth)
+        axs[0].plot(wealth + inventory*midprices)
+        axs[1].plot(inventory)
+        axs[2].plot(midprices)
+        plt.show()
+
+
+if __name__ == "__main__":
+    mm = MarketMaker(0, 0)
+    mm.step()

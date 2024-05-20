@@ -7,6 +7,7 @@ import matplotlib.ticker as mtick
 import sys, time, os
 from scipy.optimize import curve_fit
 from tqdm import tqdm
+import torch.nn as nn
 
 """
 set all utility functions! 
@@ -24,6 +25,17 @@ SAVEDIR = os.getcwd()+"/"
 SAVEEXT = ".png"
 np.set_printoptions(precision=4)
 
+
+def build_mlp(input_size, output_size, n_layers, hidden_size):
+    """ Build multi-layer perception with n_layers hidden layers of size hidden_size """
+    layers = [nn.Linear(input_size,hidden_size),nn.ReLU()]
+    for i in range(n_layers-1):
+        layers.append(nn.Linear(hidden_size,hidden_size))
+        layers.append(nn.ReLU())
+    layers.append(nn.Linear(hidden_size, output_size))
+    return nn.Sequential(*layers)
+
+# random functions
 def uFormat(number, uncertainty, round = 0, sig_figs = 4, FormatDecimals = False):
     """
     Returns "num_rounded(with_sgnfcnt_dgts_ofuncrtnty)", formatted to 10^round

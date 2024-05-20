@@ -6,7 +6,6 @@ GaussianNoise = noise.GaussianNoise
 from stochastic.processes.continuous.brownian_motion import BrownianMotion
 from scipy.optimize import curve_fit
 
-
 n_times = 100000
 max_t = 1
 times = np.linspace(0, max_t, n_times+1)

@@ -1,12 +1,5 @@
-import numpy as np
+from util import uFormat, mpl, plt, np
 import heapq  # priority queue
-import matplotlib.pyplot as plt
-import matplotlib as mpl
-from cycler import cycler
-#           |   Red  |   Blue  |  Orange |  Purple | Yellow  |   Green |   Teal  | Grey
-hexcolors = ['DC267F', '648FFF', 'FE6100', '785EF0', 'FFB000', '009E73', '3DDBD9', '808080']
-mpl.rcParams['axes.prop_cycle'] = cycler('color', [mpl.colors.to_rgba('#' + c) for c in hexcolors])
-from util import uFormat
 
 """
 Follow the naive approach taken in 
@@ -40,6 +33,8 @@ class OrderBook():
         # and their relevant pricing dynamics
         self.midprice = None
         self.spread = None
+        self.delta_b = None
+        self.delta_a = None
     
     def recalculate(self):
         """ Recalculate self.midprice and self.spread """
@@ -139,6 +134,7 @@ class OrderBook():
         plt.title(title)
         plt.legend(loc='upper center',ncol=2)
         plt.show()
+
 
 # we getting Pythonic up in this
 if __name__ == "__main__":

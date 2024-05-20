@@ -8,6 +8,11 @@ import sys, time, os
 from scipy.optimize import curve_fit
 from tqdm import tqdm
 
+"""
+set all utility functions! 
+- import mpl from util in order to 
+"""
+
 #           |   Red  |   Blue  |  Orange |  Purple | Yellow  |   Green |   Teal  | Grey
 hexcolors = ['DC267F', '648FFF', 'FE6100', '785EF0', 'FFB000', '009E73', '3DDBD9', '808080']
 mpl.rcParams['axes.prop_cycle'] = cycler('color', [mpl.colors.to_rgba('#' + c) for c in hexcolors])

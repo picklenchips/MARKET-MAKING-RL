@@ -60,8 +60,10 @@ where r^b, r^a is bid, ask price
 """
 def res_ask_price(s,q,t):
     return s + (1-2*q) * gamma * sigma**2 * (T-t)
+
 def res_bid_price(s,q,t):
     return s - (1+2*q) * gamma * sigma**2 * (T-t)
+
 # avg between bid and ask
 def res_price(s, q, t):  # reservation / indifference price
     return s - q * gamma * sigma**2 * (T-t)
@@ -110,31 +112,36 @@ class MarketMaker():
         # action stuff
         self.sigma = 1
         self.gamma = 1
-        self.terminal_time = 1000
+        self.terminal_time = 1000  # second
         self.dt = 1   # millisecond
 
     
-    def act(self, action, nstocks, price=None):
-        if action == 'buy':
+    def act(self, action: int, nstocks: int, price=0.):
+        if action == 0:  #'buy'
             n_bought, bought = self.book.buy(nstocks)
             return bought
-        elif action == 'sell':
+        elif action == 1:  #'sell':
             n_sold, sold = self.book.sell(nstocks)
             return sold
-        if price is None:
-            raise ValueError("Price must be specified for 'bid' and 'ask' actions")
-        if action == 'bid':
+        if not price:
+            raise ValueError("Price must be specified for 'bid' (1) and 'ask' (2) actions")
+        if action == 2: # 'bid':
             self.book.bid(nstocks, price)
-        elif action == 'ask':
+        elif action == 3:  #'ask':
             self.book.ask(nstocks, price)
         else:
-            raise ValueError(f"Invalid action {action}")
+            raise ValueError(f"Invalid action {action}. Action is 0 for market-buy, 1 for market-sell, 2 for limit-bid, and 3 for limit-ask.")
     
+    # trading intensities
     def lambda_buy(self, delta_a):
-        return (self.Lambda_b / self.alpha) * np.exp(-delta_a * self.alpha * self.K_b)
+        k = self.alpha * self.K_b
+        A = self.Lambda_b / self.alpha
+        return A * np.exp(-k*delta_a)
 
     def lambda_sell(self, delta_b):
-        return (self.Lambda_s / self.alpha) * np.exp(-delta_b * self.alpha * self.K_s)
+        k = self.alpha * self.K_s
+        A = self.Lambda_s / self.alpha
+        return A * np.exp(-k*delta_b)
     
     # objective with no inventory dynamics?
     def frozen_value(self, initial_wealth, stock_val, nstocks, time):

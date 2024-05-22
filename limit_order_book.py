@@ -106,6 +106,7 @@ class OrderBook():
 
     def bid(self, nstocks, price):
         """Add a limit-buy order. Sorted highest-to-lowest"""
+        price = round(price, 2)  # can only buy/sell in cents
         # buying higher than lowest sell -> market buy instead
         if len(self.asks):
             if price >= self.asks[0][0]:
@@ -119,6 +120,7 @@ class OrderBook():
 
     def ask(self, nstocks, price):
         """Add a limit-sell order"""
+        price = round(price, 2)  # can only buy/sell in cents
         # selling lower than highest buy order -> sell some now!
         if len(self.bids):
             if price <= -self.bids[0][0]:

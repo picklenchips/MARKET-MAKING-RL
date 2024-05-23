@@ -32,28 +32,30 @@ class OrderBook():
         self.bids = []
         self.asks = []
         # and their relevant pricing dynamics
-        self.midprice = None
-        self.spread   = None
-        self.delta_b  = None
-        self.delta_a  = None
+        self.midprice = 0
+        self.spread   = 0
+        self.delta_b  = 0
+        self.delta_a  = 0
     
     def recalculate(self):
         """ Recalculate self.midprice and self.spread """
-        self.spread = self.midprice = None
-        self.delta_b = self.delta_a = None
+        self.spread = self.midprice = 0
+        self.delta_b = self.delta_a = 0
+        self.low_ask = self.high_bid = 0
+        self.nlow_ask = self.nhigh_bid = 0
         if len(self.asks):
-            self.midprice = self.asks[0][0]
+            self.low_ask = self.midprice = self.asks[0][0]
+            self.nlow_ask = self.asks[0][1]
             if len(self.bids):
-                lowest_sell = self.asks[0][0]
-                highest_buy = -self.bids[0][0]
-                self.midprice = (lowest_sell + highest_buy)/2
-                self.spread = lowest_sell - highest_buy
-                self.delta_b = self.midprice - highest_buy
-                self.delta_a = lowest_sell - self.midprice
+                self.midprice = (self.low_ask + self.high_bid)/2
+                self.spread = self.low_ask - self.high_bid
+                self.delta_b = self.midprice - self.high_bid
+                self.delta_a = self.low_ask - self.midprice
                 if self.spread < 0:
                     print("ERROR: unrealistic spread!!")
         elif len(self.bids):
-            self.midprice = -self.bids[0][0]
+            self.high_bid = self.midprice = -self.bids[0][0]
+            self.nhigh_bid = self.bids[0][1]
 
     def buy(self, nstocks, maxprice=None):
         """Buy (up to) nstocks stocks to lowest-priced limit-sell orders

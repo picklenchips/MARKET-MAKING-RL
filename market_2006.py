@@ -51,8 +51,7 @@ def res_bid_price(s,q,t):
 # avg between bid and ask
 def res_price(s, q, t):  # reservation / indifference price
     return s - q * gamma * sigma**2 * (T-t)
-
-
+                                                                                                                                                                                                                                                                                                                                                                                                                                    
 """
 2.4 :  adding limit orders
 
@@ -94,7 +93,7 @@ class Exponential(torch.nn.Module):
 
 
 class MarketMaker():
-    def __init__(self, inventory, wealth):
+    def __init__(self, inventory, wealth, dt=1e-3):
         self.I = inventory
         self.W = wealth
         self.book = OrderBook()
@@ -112,44 +111,29 @@ class MarketMaker():
         self.sigma = 1e-2
         self.gamma = 1
         self.terminal_time = 1  # second
-        self.dt = 5e-3   # millisecond
+        self.dt = dt   # millisecond
 
         # --- neural network --- #
         # predict actions from observations
 
-        # variables = (highest_bid, lowest_ask, n_highest_bid, n_lowest_ask, wealth[t-1], inventory[t-1], midprices[t-1])
-        obs_dim = 7
+        # variables = (n_bid, bid_price, n_ask, ask_price, wealth[t-1], inventory[t-1], midprices[t-1], time_left)
+        obs_dim = 8
         hidden_dim = 10
         # learn the expectation of the Q function
         self.value_network = nn.Sequential(nn.Linear(obs_dim, hidden_dim), 
                                            nn.LeakyReLU(),
                                            nn.Linear(hidden_dim, 1),
                                            Exponential())
-        self.optimizer = torch.optim.Adam(self.value_network.parameters(), lr=1e-3)
+        self.value_optimizer = torch.optim.Adam(self.value_network.parameters(), lr=1e-3)
         act_dim = 6
         self.policy_network = nn.Sequential(nn.Linear(obs_dim, hidden_dim),
                                             nn.LeakyReLU(),
                                             nn.Linear(hidden_dim, act_dim))
+        self.policy_optimizer = torch.optim.Adam(self.policy_network.parameters(), lr=1e-3)
     
-    def act(self, action: int, nstocks: int, price=0.):
-        if action == 0:  #'buy'
-            n_bought, bought = self.book.buy(nstocks)
-            return bought
-        elif action == 1:  #'sell':
-            n_sold, sold = self.book.sell(nstocks)
-            return sold
-        if not price:
-            raise ValueError("Price must be specified for 'bid' (1) and 'ask' (2) actions")
-        if action == 2: # 'bid':
-            self.book.bid(nstocks, price)
-        elif action == 3:  #'ask':
-            self.book.ask(nstocks, price)
-        else:
-            raise ValueError(f"Invalid action {action}. Action is 0 for market-buy, 1 for market-sell, 2 for limit-bid, and 3 for limit-ask.")
-    
-    # trading intensities
+    # --- trading intensities / environment --- #
     def lambda_buy(self, delta_a):
-        k = self.alpha * self.K_b
+        k = self.alpha * self.K_b                                                                                                                                                                                                                                                      
         A = self.Lambda_b / self.alpha
         return A * np.exp(-k*delta_a)
 
@@ -158,19 +142,79 @@ class MarketMaker():
         A = self.Lambda_s / self.alpha
         return A * np.exp(-k*delta_b)
     
-    # objective with no inventory dynamics?
-    def frozen_value(self, initial_wealth, stock_val, nstocks, time):
-        first = -np.exp(-gamma*(initial_wealth + nstocks*stock_val))
-        second = np.exp((gamma*nstocks*sigma)**2 * (self.terminal_time - time) / 2)
-        return first * second
-    
-    def step(self):
-        # initial state of order book
-        initial_midprice = 100
-        initial_spread = 10
-        initial_num_stocks = 100
+    def market_step(self):
+        """ Evolve market order book with market orders 
+        - returns change in wealth, inventory (dW, dI) """
+        delta_b = self.book.delta_b; delta_a = self.book.delta_a
+        nbuy  = np.random.poisson(self.lambda_buy(delta_a))
+        nsell = np.random.poisson(self.lambda_sell(delta_b))
+        n_ask_lift, bought = self.book.buy(nbuy)
+        n_bid_hit, sold = self.book.sell(nsell)
+        return bought - sold, n_bid_hit - n_ask_lift
+
+    def initialize_book(self, initial_midprice=100, initial_spread=10, initial_num_stocks=100, 
+                        nsteps=30):
+        """ Randomly initialize order book """
         self.book.bid(initial_num_stocks//2, initial_midprice-initial_spread/2)
         self.book.ask(initial_num_stocks-initial_num_stocks//2, initial_midprice+initial_spread/2)
+        # keep track 
+        for t in range(nsteps):
+            # perform random MARKET ORDERS
+            dW, dI = self.market_step()
+            # can keep track of wealth, inventory changes maybe
+            # wealth += bought - sold
+            state  = self.observe_state()
+            # perform random LIMIT ORDERS
+            action = self.act(state, naive=2)
+        
+
+
+    # --- RL part --- #
+    def observe_state(self):
+        """ instead of midprice, delta_a, delta_b, can just use actual price of the 
+        highest bid and lowest ask """
+        return self.book.nhigh_bid, self.book.high_bid, self.book.nlow_ask, self.book.low_ask
+
+    def act(self, state: tuple, naive=1):
+        """ Perform action on order book 
+        - action is only limit orders (for now) 
+            - can be extended to (n_bid, bid_price, n_ask, ask_price, n_buy, n_sell)
+        - returns action taken, (n_bid, bid_price, n_ask, ask_price)
+        - naive sets price variance of 'stupid' policy taken around midprice
+        """
+        if naive:  # sort of smart policy
+            n_bid, o_bid_price, n_ask, o_ask_price = state
+            delta_b = self.book.delta_b; delta_a = self.book.delta_a
+            bid_price = np.random.normal(bid_price, delta_b*naive/4)
+            ask_price = np.random.normal(ask_price, delta_a*naive/4)
+            # makes sure that bid price is always less than ask price
+            bid_price = np.clip(bid_price, 0, min(bid_price, o_ask_price))
+            ask_price = np.clip(ask_price, max(o_bid_price, ask_price), np.inf)
+            n_bid = np.random.poisson(n_bid)
+            n_ask = np.random.poisson(n_ask)
+        else:
+            action = self.policy_network(torch.tensor(state)).item()
+        n_bid, bid_price, n_ask, ask_price = action
+        # can only bid integer multiples
+        n_bid = round(n_bid)
+        n_ask = round(n_ask)
+        # LOB automatically only inserts price in cents so dw ab
+        # bid_price = round(bid_price.item(), 2)
+        self.book.bid(n_bid, bid_price)
+        self.book.ask(n_ask, ask_price)
+        return action
+
+    # --- REWARD FUNCTIONS --- #
+    # objective with no inventory dynamics?
+    def frozen_value(self, initial_wealth, stock_val, nstocks, time_left):
+        first = -np.exp(-self.gamma*(initial_wealth + nstocks*stock_val))
+        second = np.exp((self.gamma*nstocks*self.sigma)**2 * time_left / 2)
+        return first * second
+    
+    def naive_train(self):
+        """ naively iterate through order book to show evolution over time using current policy algorithm """
+        # initial state of order book
+        self.initialize_book()
         # random event of market order
         n_times = int(self.terminal_time / self.dt)
         wealth = np.zeros(n_times+1)
@@ -178,97 +222,41 @@ class MarketMaker():
         inventory = np.zeros(n_times+1)
         inventory[0] = self.n
         midprices = np.zeros(n_times+1)
-        midprices[0] = initial_midprice
+        midprices[0] = self.book.midprice
         epsilon = 0
 
+        track_rand_mid = False
+
         for t in range(1,n_times+1):
-            # take action after observing state
-
-            # --- MARKET MAKER ACTIONS --- #
-            # limit orders
-            # --- INPUTS --- #
-            mid = midprices[t-1]
-
-            delta_b = self.book.delta_b
-            delta_a = self.book.delta_a
-            if not len(self.book.bids) or not len(self.book.asks):
-                break
-            n_highest_bid = self.book.bids[0][1]
-            n_lowest_ask = self.book.asks[0][1]
-            lowest_ask  = self.book.midprice + delta_a
-            highest_bid = self.book.midprice - delta_b
-            #obs_state = (highest_bid, lowest_ask, n_highest_bid, n_lowest_ask)
-            # want to change obs_state by taking these actions
-
-            # potentially add n_buy, n_ask to state
-            act_state = (n_bid, bid_price, n_ask, ask_price)
-
             # OBSERVE STATE
-            observations = (highest_bid, lowest_ask, n_highest_bid, n_lowest_ask, wealth[t-1], inventory[t-1], midprices[t-1])
-            
+            state = self.observe_state()
             # PERFORM ACTION
+            action = self.act(state, naive=1)
+            # RANDOM MARKET EVOLUTION (market orders)
+            dW, dI = self.market_step()
+            # update wealth, inventory tracking
+            wealth[t] = wealth[t-1] + dW
+            inventory[t] = inventory[t-1] + dI
 
-            action = self.policy_network()
+            if track_rand_mid:  # scaled random walk
+                new_eps = np.random.normal(0,self.dt*t)
+                time_drift = self.dt*t*5
+                new_midprice = midprices[t-1]*np.exp(time_drift + self.sigma*(new_eps - epsilon))
+                # clip midprice so that it is within bid, ask spread
+                midprices[t] = np.clip(new_midprice, self.book.high_bid, self.book.low_ask)
+                epsilon = new_eps
+            else:  # just track the actual midprice
+                midprices[t] = self.book.midprice
 
-            # OBSERVE NEXT STATE
-            actions = (highest_bid, lowest_ask, n_highest_bid, n_lowest_ask)
-
-            variables = (highest_bid, lowest_ask, n_highest_bid, n_lowest_ask, wealth[t-1], inventory[t-1], midprices[t-1])
-            vars = torch.tensor(variables)
-            obs_dim = len(variables)
-            act_dim = len(act_state)
-            hidden_dim = 10
-            # learn the expectation of the Q function
-            self.value_network = nn.Sequential(nn.Linear(obs_dim, hidden_dim), 
-                                               nn.LeakyReLU(),
-                                               nn.Linear(hidden_dim, 1))
-            # input: midprice, delta_b, delta_a
-            # more input: self.book.bids[0][1], self.book.asks[0][1]
-            # output: bid_price, bid_num, ask_price, ask_num
-
-            # --- OUTPUTS --- #
-            bid_price = np.random.normal(mid - delta_b, delta_b/4)
-            ask_price = np.random.normal(mid + delta_a, delta_a/4)
-            # makes sure that bid price is less than ask price always?
-            # only needed for larger variance in the prices that may cross
-            bid_price = np.clip(bid_price, 0, min(mid + delta_a, ask_price))
-            ask_price = np.clip(ask_price, max(bid_price, mid - delta_b), np.inf)
-            #self.book.plot()
-            n_bid = np.random.poisson(n_highest_bid)
-            n_ask = np.random.poisson(n_lowest_ask)
-            self.book.bid(n_bid, bid_price)
-            self.book.ask(n_ask, ask_price)
-
-
-            # ---- transition to next state ---- #
-
-            # --- market act --- #
-            # get random number of buys, sells
-            nbuy  = np.random.poisson(self.lambda_buy(delta_a))
-            nsell = np.random.poisson(self.lambda_sell(delta_b))
-            n_ask_lift, bought = self.book.buy(nbuy)
-            n_bid_hit, sold = self.book.sell(nsell)
-
-            # update wealth
-            # make money from people buying, lose money from people selling
-            wealth[t] = wealth[t-1] + bought - sold
-            inventory[t] = inventory[t-1] + n_bid_hit - n_ask_lift
-
-            # scaled random walk
-            new_eps = np.random.normal(0,self.dt*t)
-            time_drift = self.dt*t*5
-            new_midprice = midprices[t-1]*np.exp(time_drift + self.sigma*(new_eps - epsilon))
-            # clip midprice so that it is within bid, ask spread
-            midprices[t] = np.clip(new_midprice, self.book.midprice - delta_b, self.book.midprice + delta_a)
-            epsilon = new_eps
-
-            # update expecation based on t-0 network
-            new_val = -torch.from_numpy(np.exp(-self.gamma(wealth[t]+inventory[t]*midprices[t])))
-            pred_val = self.value_network(vars)
+            # -- REWARD FUNCTION -- #
+            value_state = state + (wealth[t], midprices[t], inventory[t], self.terminal_time - t*self.dt)
+            reward   = self.frozen_value(wealth[t], midprices[t], inventory[t], self.terminal_time - t*self.dt)
+            new_val  = torch.from_numpy(reward)
+            pred_val = self.value_network(value_state)
             loss = -(new_val - pred_val)
-            self.optimizer.zero_grad()
+            self.value_optimizer.zero_grad()
             loss.backward()
-            self.optimizer.step()
+            self.value_optimizer.step()
 
         # plot everything!
         self.book.plot()
@@ -302,6 +290,7 @@ def train_market():
 
     # initialize VALUE function
     # Q-value function
+
 
     num_episodes = 1000
     for episode in range(num_episodes):

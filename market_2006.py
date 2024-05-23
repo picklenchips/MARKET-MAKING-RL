@@ -94,9 +94,9 @@ class Exponential(torch.nn.Module):
 
 
 class MarketMaker():
-    def __init__(self, nstocks, wealth):
-        self.n = nstocks
-        self.wealth = wealth
+    def __init__(self, inventory, wealth):
+        self.I = inventory
+        self.W = wealth
         self.book = OrderBook()
         self.actions = ['buy', 'sell', 'bid', 'ask']
         # --- market order parameters --- #
@@ -283,6 +283,88 @@ class MarketMaker():
         axs[2].plot(midprices)
         axs[0].legend()
         plt.show()
+
+
+# tuple of time, wealth_diff, inventory_diff, midprice_diff
+# from https://discovery.ucl.ac.uk/id/eprint/10116730/1/RLforHFMM.pdf 
+def step_reward(output, a=1, b=1):
+    wealth_diff, inventory_diff, time_diff = output
+    return a*wealth_diff + np.exp(-b*time_diff) * np.sign(inventory_diff)
+
+def train_market():
+    """ Monte-Carlo Ish Thing """
+    # initialize parameters
+
+    dt = 0.005
+    # initialize POLICY function
+    # some neural network that maps states to actions
+    # initialize policy to AV-STOICKov policy? train NN to learn this function lol
+
+    # initialize VALUE function
+    # Q-value function
+
+    num_episodes = 1000
+    for episode in range(num_episodes):
+        # run trajectories
+        mm = MarketMaker(100, 1000, dt=dt)
+
+        # move market forward 30 times
+        # randomly initialize order book
+        # do random market orders and random limit orders
+
+        # run full trajectory, given current policy / state
+        num_timesteps = 10000  # define horizon
+        times = np.arange(0, num_timesteps*dt, dt)
+        trajectory_return = 0
+        trajectory = []
+        for t in times:
+            # observe state
+            # TUPLE of (delta_a, delta_b, n_high_bid, n_low_ask)
+            state = mm.observe_state()
+            # observe and take action
+            # TUPLE of (n_bid, bid_price, n_ask, ask_price)
+            action = mm.act(state)
+            # step through one market dynamics evolution
+            # -- perform random market orders
+            # -- jump to next timestep
+            # and record change in wealth, inventory, midprice? 
+            output = mm.step()
+            # step return
+            trajectory_return += step_reward(output)
+
+            trajectory.append(state, action)  # store t as well?
+        
+        # observe final state and reward
+        trajectory_return += mm.final_reward()
+
+        # --- UPDATE POLICY AND VALUE FUNCTIONS --- #
+
+        # backpropagate through trajectory to define reward from t?
+
+        # use advantage function to debias 
+        advantage = trajectory_return - mm.Q_function(trajectory)
+        # compute discounted advantage using discounted returns?
+        # backstep
+        
+
+        # RUN PPO
+
+
+        
+        
+
+        
+
+        
+
+
+
+
+
+
+
+
+
 
 
 if __name__ == "__main__":

@@ -1,5 +1,5 @@
-from util import uFormat, mpl, plt, np
-from util import FIGSIZE, SAVEDIR, SAVEEXT
+from util import uFormat, plt, np
+from util import FIGSIZE
 import heapq  # priority queue
 
 class OrderBook():
@@ -51,47 +51,51 @@ class OrderBook():
         returns tuple of int: num stocks bought, 
                          list of (price, n_stocks) orders that have been bought
         optionally, only buy stocks valued below max price"""
+        
         n_bought = total_bought = 0; do_update = False
-        # bought = []
         while nstocks > 0 and len(self.asks):
             if maxprice:  # only buy stocks less than max price
                 if self.asks[0][0] > maxprice: break
-            # buy up to nstocks stocks from the n available at this price
             price, n = heapq.heappop(self.asks)
+            
+            # buy up to nstocks stocks from the n available at this price
             n_bought_rn = min(n, nstocks)
             n_bought += n_bought_rn
-            #bought.append((price, n_bought_rn))
             total_bought += price*n_bought_rn
+            
             # place remaining portion of limit order back
             if nstocks < n: 
                 heapq.heappush(self.asks, (price, n-nstocks))
             else: 
                 do_update = True
             nstocks -= n
+        
         if do_update: self.recalculate()
         return n_bought, total_bought
 
     def sell(self, nstocks: int, minprice=0.0):
         """Sell (up to) nstocks stocks to highest-priced limit-buy orders
         optionally, only sell stocks valued above min price"""
+        
         n_sold = total_sold = 0; do_update = False
-        #sold = []  # keep track of orders sold
         while nstocks > 0 and len(self.bids):
             if minprice:  # only sell stocks greater than min price
                 if -self.bids[0][0] < minprice: break
             price, n = heapq.heappop(self.bids)
             price = -price  # convert back to normal price
+            
             # sell up to nstocks stocks to the n available at this price
             n_sold_rn = min(n, nstocks)
             n_sold += n_sold_rn
-            #sold.append((price,n_sold_rn))
             total_sold += price*n_sold_rn
+            
             # place remaining portion of limit order back
             if nstocks < n: 
                 heapq.heappush(self.bids,(-price, n-nstocks))
             else: 
                 do_update = True
             nstocks -= n
+        
         if do_update: self.recalculate()
         return n_sold, total_sold
 
@@ -105,7 +109,7 @@ class OrderBook():
                 nstocks -= nbought
                 if nstocks == 0: return  # all eaten!
         heapq.heappush(self.bids, (-price, nstocks))
-        # is now highest buy order, recalculate
+        # if now highest buy order, recalculate
         if -price == self.bids[0][0]:
             self.recalculate()
 
@@ -119,7 +123,7 @@ class OrderBook():
                 nstocks -= nsold
                 if nstocks == 0: return  # all eaten!
         heapq.heappush(self.asks, (price, nstocks))
-        # is now lowest sell order, recalculate
+        # if now lowest sell order, recalculate
         if price == self.asks[0][0]:
             self.recalculate()
     
@@ -143,8 +147,10 @@ class OrderBook():
         title = "Order Book"
         if self.midprice:  # add dashed line for midprice
             lowy, highy = ax.get_ylim()
-            ax.plot([self.midprice,self.midprice],[lowy,highy*0.8],linestyle='dashed',color='black')
-            title += f" - midprice = {uFormat(self.midprice,0)}, spread = ({uFormat(self.delta_b,0)}, {uFormat(self.delta_a,0)})"
+            ax.axvline(x=self.midprice, linestyle='dashed', color='black')
+            title += f" - midprice = {uFormat(self.midprice,0)}, spread = {uFormat(self.spread,0)}, ({uFormat(self.midprice - self.delta_b,0)}, {uFormat(self.midprice + self.delta_a,0)})"
+            ax.axvline(x=-self.bids[0][0], linestyle='dashed', color='blue')
+            ax.axvline(x=self.asks[0][0], linestyle='dashed', color='pink')
         plt.title(title)
         plt.legend(loc='upper center',ncol=2)
         plt.show()

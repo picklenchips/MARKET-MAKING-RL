@@ -22,8 +22,8 @@ hexcolors = ['648FFF', 'DC267F', 'FE6100', '785EF0', 'FFB000', '009E73', '3DDBD9
 mpl.rcParams['axes.prop_cycle'] = cycler('color', [mpl.colors.to_rgba('#' + c) for c in hexcolors])
 
 FIGSIZE = (10,6)
-SAVEDIR = os.getcwd()+"/"
-SAVEEXT = ".png"
+SAVEDIR = os.path.join(os.getcwd(), "plots")
+os.makedirs(SAVEDIR, exist_ok=True)
 np.set_printoptions(precision=4)
 
 

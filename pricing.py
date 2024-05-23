@@ -1,5 +1,6 @@
 import numpy as np
-from util import mpl, plt, FIGSIZE, uFormat
+import os
+from util import mpl, plt, FIGSIZE, SAVEDIR, uFormat
 
 import stochastic.processes as processes
 import stochastic.processes.noise as noise
@@ -7,38 +8,41 @@ GaussianNoise = noise.GaussianNoise
 from stochastic.processes.continuous.brownian_motion import BrownianMotion
 from scipy.optimize import curve_fit
 
-max_t = 1
-times = np.arange(0,10,0.001)
-n_times = times.shape[0]
-fig, ax = plt.subplots(figsize=FIGSIZE)
-print(n_times)
+N_RUNS = 1000
+DRIFT_VALUE = 0.5677
+SCALE_VALUE = 8.685
+MAX_T = 1
+BASELINE = 533
 
-lamb = 1
-poiss = processes.PoissonProcess(rate=lamb)
-poiss.sample(n_times, max_t)
+times = np.arange(0,10,0.001)
+N_TIMES = times.shape[0]
 
 def line(x, m, b): return m*x + b
+fig, ax = plt.subplots(figsize=FIGSIZE)
+
 i = 0
 slopes=[]
-n_runs = 1000
-for drift in [0.5677]*n_runs:
-    model = BrownianMotion(drift=drift, scale=8.685, t=max_t)
-    new = 533+model._sample_brownian_motion(n_times)[:n_times]
+for run in range(N_RUNS):
+    model = BrownianMotion(drift=DRIFT_VALUE, scale=SCALE_VALUE, t=MAX_T)
+    new = BASELINE + model._sample_brownian_motion(N_TIMES)[:N_TIMES]
     coefs, covar = curve_fit(line, times, new)
-    #ax.plot(times, new, c=f"C{i}", label=f"{drift} -> {uFormat(coefs[0],0)}")
-    #ax.plot(times, line(times, *coefs), c=f"C{i}", linestyle='dashed')
     slopes.append(coefs[0])
+    # ax.plot(times, new, c=f"C{i}", label=f"{DRIFT_VALUE} -> {uFormat(coefs[0],0)}")
+    # ax.plot(times, line(times, *coefs), c=f"C{i}", linestyle='dashed')
     i += 1
 print(np.mean(slopes))
-#plt.legend()
-#plt.show()
-fig, ax = plt.subplots(figsize=FIGSIZE)
+# plt.legend()
+# plt.savefig(os.path.join(SAVEDIR, "drifting.png"))
+# plt.clf()
+
 for scale in [0.5,1,2,3]:
-    model = BrownianMotion(drift=0, scale=scale, t=max_t)
-    new = model._sample_brownian_motion(n_times)[:n_times]
+    model = BrownianMotion(drift=0, scale=scale, t=MAX_T)
+    new = model._sample_brownian_motion(N_TIMES)[:N_TIMES]
     coefs, covar = curve_fit(line, times, new)
     ax.plot(times, new, c=f"C{i}", label=f"{scale} -> {uFormat(coefs[0],0)}")
     ax.plot(times, line(times, *coefs), c=f"C{i}", linestyle='dashed')
     i += 1
+
 plt.legend()
-plt.show()
+plt.savefig(os.path.join(SAVEDIR, "pricing.png"))
+plt.close(fig)

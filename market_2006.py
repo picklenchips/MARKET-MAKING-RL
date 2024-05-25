@@ -267,7 +267,6 @@ def get_advantages(trajectory):
         advantages.append(trajectory_return)
     return advantages
 
-
 def train_market():
     """ Monte-Carlo Ish Thing """
     obs_dim = act_dim = rew_dim = 4
@@ -286,7 +285,6 @@ def train_market():
     mm.initialize_networks(value_dim=value_dim)
 
     discount = 0.99
-
 
     num_episodes = 1000
     with tqdm(total=num_episodes) as pbar:

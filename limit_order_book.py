@@ -2,20 +2,6 @@ from util import uFormat, mpl, plt, np
 from util import FIGSIZE, SAVEDIR, SAVEEXT
 import heapq  # priority queue
 
-"""
-Follow the naive approach taken in 
-https://math.nyu.edu/~avellane/HighFrequencyTrading.pdf 
-to define the order book environment
-"""
-
-class LimitOrder():
-    def __init__(self, nstocks, price):
-        self.n = nstocks
-        self.p = price
-
-# should we change buying and selling to be the same action, but 
-# with a negative price??
-
 class OrderBook():
     """
     Creates a limit-order book with four distinct actions:
@@ -23,9 +9,11 @@ class OrderBook():
     - sell: market-sell # of stocks more expensive than some minimum price 
     - bid: create a limit order to buy # stocks at some price
       - stored self.bids as (-price, #)
+      - highest bid tracked as (self.high_bid, self.nhigh_bid)
     - ask: create a limit order to sell # stocks at some price 
       - stored self.asks as (price, #)
-    and two states self.midprice, self.spread
+      - lowest ask tracked as (self.low_ask, self.nlow_ask)
+    also stroes self.midprice, self.spread, self.delta_b, self.delta_a
     """
     def __init__(self):
         # keep track of limit orders
@@ -47,6 +35,7 @@ class OrderBook():
             self.low_ask = self.midprice = self.asks[0][0]
             self.nlow_ask = self.asks[0][1]
             if len(self.bids):
+                self.high_bid = -self.bids[0][0]; self.nhigh_bid = self.bids[0][1]
                 self.midprice = (self.low_ask + self.high_bid)/2
                 self.spread = self.low_ask - self.high_bid
                 self.delta_b = self.midprice - self.high_bid
@@ -57,7 +46,7 @@ class OrderBook():
             self.high_bid = self.midprice = -self.bids[0][0]
             self.nhigh_bid = self.bids[0][1]
 
-    def buy(self, nstocks, maxprice=None):
+    def buy(self, nstocks: int, maxprice=0.0):
         """Buy (up to) nstocks stocks to lowest-priced limit-sell orders
         returns tuple of int: num stocks bought, 
                          list of (price, n_stocks) orders that have been bought
@@ -82,7 +71,7 @@ class OrderBook():
         if do_update: self.recalculate()
         return n_bought, total_bought
 
-    def sell(self, nstocks, minprice=None):
+    def sell(self, nstocks: int, minprice=0.0):
         """Sell (up to) nstocks stocks to highest-priced limit-buy orders
         optionally, only sell stocks valued above min price"""
         n_sold = total_sold = 0; do_update = False
@@ -106,7 +95,7 @@ class OrderBook():
         if do_update: self.recalculate()
         return n_sold, total_sold
 
-    def bid(self, nstocks, price):
+    def bid(self, nstocks: int, price: float):
         """Add a limit-buy order. Sorted highest-to-lowest"""
         price = round(price, 2)  # can only buy/sell in cents
         # buying higher than lowest sell -> market buy instead
@@ -120,7 +109,7 @@ class OrderBook():
         if -price == self.bids[0][0]:
             self.recalculate()
 
-    def ask(self, nstocks, price):
+    def ask(self, nstocks: int, price: float):
         """Add a limit-sell order"""
         price = round(price, 2)  # can only buy/sell in cents
         # selling lower than highest buy order -> sell some now!
@@ -143,8 +132,8 @@ class OrderBook():
         highest_ask = max([a[0] for a in self.asks])
         lowest_bid  = min([-b[0] for b in self.bids])
         pricerange = highest_ask - lowest_bid
-        brange = -self.bids[0][0] - lowest_bid
-        arange = highest_ask - self.asks[0][0]
+        brange = self.high_bid - lowest_bid
+        arange = highest_ask - self.low_ask
         bbins = int(nbins*brange/pricerange)
         abins = int(nbins*arange/pricerange)
         # plot the bids and asks
@@ -163,6 +152,7 @@ class OrderBook():
 # we getting Pythonic up in this
 if __name__ == "__main__":
     # test orderbook eating properties
+    # also book.plot()
     while 1:
         N = input("number of buy-sell iterations:\n>> ").strip()
         if N.isdigit():

@@ -1,10 +1,9 @@
 from limit_order_book import OrderBook, LimitOrder
-from util import uFormat, mpl, plt, np
+from util import uFormat, mpl, plt, np, np2torch
 import torch
 import torch.nn as nn
 import tqdm as tqdm
 
-gamma = sigma = 1; T = 1000
 # v(x,s,q,t), 
 # x = initial wealth, s = initial stock value, q = nstocks, t = time
 def frozen_value(initial_wealth, stock_val, nstocks, time):
@@ -79,9 +78,13 @@ class MarketMaker():
         self.K_s = 1
         # action stuff
         self.sigma = sigma
-        self.gamma = gamma
+        self.gamma = gamma  # discount variable
         self.terminal_time = terminal_time  # second
         self.dt = dt   # millisecond
+        # NN dimensions
+        self.obs_dim = 4
+        self.act_dim = 4
+        self.val_dim = 8
     
     def initialize_networks(self, obs_dim=4, act_dim=4, value_dim=8, hidden_dim=10):
         """ set policy and value networks 
@@ -144,29 +147,38 @@ class MarketMaker():
     # --- RL part --- #
     def observe_state(self):
         """ instead of midprice, delta_a, delta_b, can just use actual price of the 
-        highest bid and lowest ask """
+        highest bid and lowest ask (dim=4) """
         return self.book.nhigh_bid, self.book.high_bid, self.book.nlow_ask, self.book.low_ask
 
     def act(self, state: tuple, naive=0):
-        """ Perform action on order book 
+        """ Perform action on order book (dim=4)
         - action is only limit orders (for now) 
             - can be extended to (n_bid, bid_price, n_ask, ask_price, n_buy, n_sell)
         - returns action taken, (n_bid, bid_price, n_ask, ask_price)
         - naive sets price variance of 'stupid' policy taken around midprice
         """
-        if naive:  # sort of smart policy
-            n_bid, o_bid_price, n_ask, o_ask_price = state
+        n_bid, o_bid_price, n_ask, o_ask_price = state
+        if naive == 1:  # avellaneda policy
+            n_bid = n_ask = 1
+            if :
+            # need to expand state
+            def res_ask_price(s,q,t):
+                return s + (1-2*q) * self.gamma * self.sigma**2 * (self.terminal_time-t)
+
+            def res_bid_price(s,q,t):
+                return s - (1+2*q) * self.gamma * self.sigma**2 * (self.terminal_time-t)
+        elif naive >= 2:  # default policy
             delta_b = self.book.delta_b; delta_a = self.book.delta_a
             bid_price = np.random.normal(bid_price, delta_b*naive/4)
             ask_price = np.random.normal(ask_price, delta_a*naive/4)
-            # makes sure that bid price is always less than ask price
-            bid_price = np.clip(bid_price, 0, min(bid_price, o_ask_price))
-            ask_price = np.clip(ask_price, max(o_bid_price, ask_price), np.inf)
             n_bid = np.random.poisson(n_bid)
-            n_ask = np.random.poisson(n_ask)
+            n_ask = np.random.poisson(n_ask) 
         else:
             action = self.policy(torch.tensor(state)).item()
-        n_bid, bid_price, n_ask, ask_price = action
+            n_bid, bid_price, n_ask, ask_price = action
+        # make sure that bid price is always less than ask price
+        bid_price = np.clip(bid_price, 0, min(bid_price, o_ask_price))
+        ask_price = np.clip(ask_price, max(o_bid_price, ask_price), np.inf)
         # can only bid integer multiples
         n_bid = round(n_bid)
         n_ask = round(n_ask)
@@ -174,7 +186,7 @@ class MarketMaker():
         # bid_price = round(bid_price.item(), 2)
         self.book.bid(n_bid, bid_price)
         self.book.ask(n_ask, ask_price)
-        return action
+        return n_bid, bid_price, n_ask, ask_price
 
     # --- REWARD FUNCTIONS --- #
     # objective with no inventory dynamics?
@@ -182,6 +194,58 @@ class MarketMaker():
         first = -np.exp(-self.gamma*(initial_wealth + nstocks*stock_val))
         second = np.exp((self.gamma*nstocks*self.sigma)**2 * time_left / 2)
         return first * second
+
+    def immediate_reward(reward_state, a=1, b=1):
+        """ immediate + discounted future reward """
+        dW, dI, time_left = reward_state
+        return a*dW + np.exp(-b*time_left) * np.sign(dI)
+    
+    def final_reward(wealth, inventory, midprice):
+        return -np.exp(-(wealth + inventory*midprice))
+
+    def simulate(self, num=1000):
+        """ Sample a batch of trajectories under some policy
+        - returns (trajectories, rewards)
+        - trajectories = (num x num_times x val_dim) nd.arary
+        - rewards = (num x num_times) nd.array """
+        times = np.arange(0, self.terminal_time, self.dt)
+        nt = len(times)
+        trajectories = np.empty((num, nt, self.val_dim))
+        rewards = np.empty((num, nt))
+        with tqdm(total=num) as pbar:
+            pbar.set_description("Creating Batch...")
+            for batch in range(num):
+                self.initialize_book()
+                # run full trajectory, given current policy / state
+                reward_states = []
+                tot_wealth = tot_inventory = 0  # only need for final reward
+                for t in range(nt):
+                    # observe state
+                    # TUPLE of (n_bid, bid_price, n_ask, ask_price) (of the highest bid & lowest ask)
+                    state = mm.observe_state()
+                    # observe and take action
+                    # TUPLE of (n_bid, bid_price, n_ask, ask_price)
+                    action = mm.act(state)
+                    # step through one market dynamics evolution
+                    # -- perform random market orders
+                    # -- jump to next timestep ??? (implement) ???
+                    dW, dI = mm.market_step()
+                    tot_wealth += dW; tot_inventory += dI  # keep track of total for final reward
+
+                    # store information in trajectory
+                    # TODO: should we add midprice tracking too? no - explicit in avg bid & ask
+                    reward_state = (dW, dI, mm.terminal_time - t*mm.dt)
+                    reward_states.append(reward_state)
+                    trajectories[batch, t] = state + action + reward_state
+                
+                # --- GET REWARDS from reward_state --- #
+                rewards[batch, -1] = self.final_reward(tot_wealth, tot_inventory, mm.book.midprice)
+                for i in range(nt-2, -1, -1):
+                    rewards[batch, i] = self.immediate_reward(reward_states[i]) + mm.gamma*rewards[batch, i+1]
+                
+                pbar.update(1)
+                pbar.set_postfix_str(f"Reward {rewards[batch, -1]}", refresh=True)
+        return trajectories, rewards
     
     def naive_train(self):
         """ naively iterate through order book to show evolution over time using current policy algorithm """
@@ -219,7 +283,7 @@ class MarketMaker():
                 # clip midprice so that it is within bid, ask spread
                 midprices[t] = np.clip(new_midprice, self.book.high_bid, self.book.low_ask)
                 epsilon = new_eps
-            else:  # just track the actual midprice
+            else:  # just track the actual midpric e
                 midprices[t] = self.book.midprice
 
             # -- TRAIN REWARD FUNCTION -- #
@@ -251,25 +315,14 @@ class MarketMaker():
 
 # tuple of time, wealth_diff, inventory_diff, midprice_diff
 # from https://discovery.ucl.ac.uk/id/eprint/10116730/1/RLforHFMM.pdf 
-def immediate_reward(input, a=1, b=1):
-    """ immediate + discounted future reward """
-    dW, dI, time_left = input
-    return a*dW + np.exp(-b*time_left) * np.sign(dI)
 
-def get_advantages(trajectory):
-    """ Backpropagate through trajectory to define reward from t """
-    trajectory_return = 0
-    T = len(trajectory)
-    rewards = []
-    for i in range(0, T):
-        j = T - i - 2
-        rewards[j] += immediate_reward(trajectory[i][2])
-        advantages.append(trajectory_return)
-    return advantages
+
+# b = gamma in Trainer class?
 
 def train_market():
     """ Monte-Carlo Ish Thing """
-    obs_dim = act_dim = rew_dim = 4
+    obs_dim = act_dim = 4
+    rew_dim = 3
     # for value function, we need 
     # (observation, action, time_left, and (wealth, inventory, midprice) at final time)
     # as we are using MC value function
@@ -277,81 +330,54 @@ def train_market():
 
     # initialize parameters
     dt = 0.005
-    num_timesteps = 10000  # define horizon
-    final_time = num_timesteps*dt  # will never exactly reach this in for loop
-    times = np.arange(0, num_timesteps*dt, dt)
-    mm = MarketMaker(0, 0, dt=dt, gamma=1, sigma=1, terminal_time=1)
+    nt = 10000  # define horizon
+    terminal_time = nt*dt  # will never exactly reach this in for loop
+    times = np.arange(0, terminal_time, dt)
+    mm = MarketMaker(0, 0, dt=dt, gamma=1, sigma=1, terminal_time=terminal_time)
+
+    #trajectores[:obs_dim], [obs_dim:act_dim], [act_dim:] for observations, actions, values
+    trajectories, rewards = mm.simulate(mm, batch_size = 1000)
+    # (batch_size x nt x value_dim), (batch_size x nt)
     # initialize policy function in self.policy and value in self.value
+    trajectories = 
     mm.initialize_networks(value_dim=value_dim)
+    # backpropagate through trajectory to define reward from t?
+    loss = -(rewards - mm.value(trajectories)).mean()
+    for i in range(len(trajectory)):
+        state, action, reward = trajectory[i]
+        value_state = state + action + (final_time - i*dt, (tot_wealth, tot_inventory, mm.book.midprice))
+        new_val = immediate_reward(reward)
+        pred_val = mm.value(value_state)
+        loss = -(new_val - pred_val)
+        mm.value_optimizer.zero_grad()
+        loss.backward()
+        mm.value_optimizer.step()
+
+        # update policy
+        advantage = advantages[i] - mm.value(trajectory)
+        normalized_advantage = (advantage - np.mean(advantage))/(np.std(advantage)+1e-10)
+        # compute discounted advantage using discounted returns?
+        # backstep
+        mm.policy_optimizer.zero_grad()
+        loss.backward()
+        mm.policy_optimizer.step()
+    # use advantage function to debias 
+    advantage = trajectory_return - mm.value(trajectory)
+    normalized_advantage = (advantage - np.mean(advantage))/(np.std(advantage)+1e-10)
+    # compute discounted advantage using discounted returns?
+    # backstep
+    
+
+    # update progress bar every episode
+    pbar.update(1)
+    pbar.set_description("text", refresh=True)
+    pbar.set_postfix_str(f"Reward {trajectory_return}")
 
     discount = 0.99
-
-    num_episodes = 1000
-    with tqdm(total=num_episodes) as pbar:
-        # for epoch in range(epoches):
-
-        # ideally, create multiple trajectories 
-        for episode in range(num_episodes):
-            # set order book to zero and
-            # move market forward 30 times
-            # randomly initialize order book
-            # do random market orders and random limit orders
-            mm.initialize_book()
             
-            # run full trajectory, given current policy / state
-            trajectory = []
-            tot_wealth = tot_inventory = 0  # only need for final reward
-            for t in times:
-                # observe state
-                # TUPLE of (delta_a, delta_b, n_high_bid, n_low_ask)
-                state = mm.observe_state()
-                # observe and take action
-                # TUPLE of (n_bid, bid_price, n_ask, ask_price)
-                action = mm.act(state)
-                # step through one market dynamics evolution
-                # -- perform random market orders
-                # -- jump to next timestep ??? (implement) ???
-                dW, dI = mm.market_step()
-                tot_wealth += dW; tot_inventory += dI
-
-                # store information in trajectory
-                trajectory.append((state, action, (dW, dI, t)))  # store t as well?
-            
-            # observe final state and reward
-            trajectory_return += mm.final_reward()
             # --- UPDATE POLICY AND VALUE FUNCTIONS --- #
 
-            # backpropagate through trajectory to define reward from t?
-            advantages = get_advantages(trajectory)
-            for i in range(len(trajectory)):
-                state, action, reward = trajectory[i]
-                value_state = state + action + (final_time - i*dt, (tot_wealth, tot_inventory, mm.book.midprice))
-                new_val = immediate_reward(reward)
-                pred_val = mm.value(value_state)
-                loss = -(new_val - pred_val)
-                mm.value_optimizer.zero_grad()
-                loss.backward()
-                mm.value_optimizer.step()
 
-                # update policy
-                advantage = advantages[i] - mm.value(trajectory)
-                normalized_advantage = (advantage - np.mean(advantage))/(np.std(advantage)+1e-10)
-                # compute discounted advantage using discounted returns?
-                # backstep
-                mm.policy_optimizer.zero_grad()
-                loss.backward()
-                mm.policy_optimizer.step()
-            # use advantage function to debias 
-            advantage = trajectory_return - mm.value(trajectory)
-            normalized_advantage = (advantage - np.mean(advantage))/(np.std(advantage)+1e-10)
-            # compute discounted advantage using discounted returns?
-            # backstep
-            
-
-            # update progress bar every episode
-            pbar.update(1)
-            pbar.set_description("text", refresh=True)
-            pbar.set_postfix_str(f"Reward {trajectory_return}")
 
 
         

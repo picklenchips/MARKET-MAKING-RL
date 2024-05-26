@@ -8,11 +8,13 @@ import sys, time, os
 from scipy.optimize import curve_fit
 from tqdm import tqdm
 import torch.nn as nn
+import torch
 
 """
 set all utility functions! 
 - import mpl from util in order to get the right colors
 - import np from util in order to get the right print options
+- use np2torch to convert np arrays to torch tensors
 """
 
 # blue = bids, red = asks
@@ -25,6 +27,12 @@ SAVEDIR = os.getcwd()+"/"
 SAVEEXT = ".png"
 np.set_printoptions(precision=4)
 
+device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+def np2torch(x, cast_double_to_float=True):
+    x = torch.from_numpy(x).to(device)
+    if cast_double_to_float and x.dtype is torch.float64:
+        x = x.float()
+    return x
 
 def build_mlp(input_size, output_size, n_layers, hidden_size):
     """ Build multi-layer perception with n_layers hidden layers of size hidden_size """

@@ -3,6 +3,7 @@ from util import uFormat, mpl, plt, np, np2torch
 import torch
 import torch.nn as nn
 import tqdm as tqdm
+from scipy import stats
 
 # v(x,s,q,t), 
 # x = initial wealth, s = initial stock value, q = nstocks, t = time
@@ -18,30 +19,8 @@ def res_bid_price(s,q,t):
     return s - (1+2*q) * gamma * sigma**2 * (T-t)
 
 # avg between bid and ask
-def res_price(s, q, t):  # reservation / indifference price
-    return s - q * gamma * sigma**2 * (T-t)
-                                                                                                                                                                                                                                                                                                                                                                                                                                    
-"""
-2.4 :  adding limit orders
-
-quotes bid price p^b, ask price p^a
-focus on distances \delta^b = s - p^b and \delta^a = p^a - s
-
-imagine market order of Q stocks arrives, the Q limit orders with lowest 
-ask prices are sold. if p^Q is price of highest limit order, 
-\Delta p = p^Q - s  is the temporary market impact of the trade
-
-ASSUME 
-- market buy orders "lift" agent's limit asks at Poisson rate
-\lambda^a(\delta^a), monotonically decreasing function
-- markey sells will "hit" the buy limit orders at rate \lambda^b
-these rates are also called the Poisson "intensities"
-
-X = wealth of agent. N_t^a is # stocks sold, $N_t^b$ is # stocks bought
-$dX_t = p^a dN_t^a - p^b dN_t^b$
-
-# stocks held at time $t$ is q_t
-"""
+def res_price(s, q, t_left):  # reservation / indifference price
+    return s - q * gamma * sigma**2 * t_left
 
 """
 model trading intensity.
@@ -150,35 +129,51 @@ class MarketMaker():
         highest bid and lowest ask (dim=4) """
         return self.book.nhigh_bid, self.book.high_bid, self.book.nlow_ask, self.book.low_ask
 
-    def act(self, state: tuple, naive=0):
+    def act(self, state: tuple):
         """ Perform action on order book (dim=4)
+        NAIVE = 0 (default):
+        - Inputs: (n_bid, bid_price, n_ask, ask_price, time_left)
+        Inputs: (n_bid, bid_price, n_ask, ask_price, time_left)
         - action is only limit orders (for now) 
             - can be extended to (n_bid, bid_price, n_ask, ask_price, n_buy, n_sell)
         - returns action taken, (n_bid, bid_price, n_ask, ask_price)
         - naive sets price variance of 'stupid' policy taken around midprice
         """
-        n_bid, o_bid_price, n_ask, o_ask_price = state
-        if naive == 1:  # avellaneda policy
-            n_bid = n_ask = 1
-            if :
-            # need to expand state
-            def res_ask_price(s,q,t):
-                return s + (1-2*q) * self.gamma * self.sigma**2 * (self.terminal_time-t)
-
-            def res_bid_price(s,q,t):
-                return s - (1+2*q) * self.gamma * self.sigma**2 * (self.terminal_time-t)
-        elif naive >= 2:  # default policy
+        try:  # invalid input action??
+            if len(state) < 3: raise TypeError
+        except TypeError:  # resample state
+            state = (self.book.nhigh_bid, self.book.high_bid, self.book.nlow_ask, self.book.low_ask)
+        if len(state) == 5:  # use NN policy
+            n_bid, bid_price, n_ask, ask_price, time_left = state
+            action = self.policy(torch.tensor(state)).item()
+        if len(state) == 4:  # default "naive" policy
             delta_b = self.book.delta_b; delta_a = self.book.delta_a
-            bid_price = np.random.normal(bid_price, delta_b*naive/4)
-            ask_price = np.random.normal(ask_price, delta_a*naive/4)
+            n_bid, bid_price, n_ask, ask_price = state
+            bid_price = np.random.normal(bid_price, delta_b/4)
+            ask_price = np.random.normal(ask_price, delta_a/4)
             n_bid = np.random.poisson(n_bid)
             n_ask = np.random.poisson(n_ask) 
-        else:
-            action = self.policy(torch.tensor(state)).item()
-            n_bid, bid_price, n_ask, ask_price = action
+            action = (n_bid, bid_price, n_ask, ask_price)
+        if len(state) == 3:  # avellaneda policy
+            wealth, inventory, time_left = state
+            n_bid = n_ask = 1  #TODO i think...
+            # greedily try to set midprice to be reservation price
+            midprice = self.book.midprice
+            res_price = self.reservation_price(midprice, inventory, time_left)
+            optimal_spread = self.optimal_spread(time_left)
+            # quote around this...
+            bid_price = res_price - optimal_spread / 2
+            ask_price = res_price + optimal_spread / 2
+            n_bid = np.random.poisson(n_bid)
+            n_ask = np.random.poisson(n_ask)
+        self.limit_act(n_bid, bid_price, n_ask, ask_price)
+    
+    def limit_act(self, n_bid, bid_price, n_ask, ask_price):
+        """ Perform a limit order action, making (up to) 2 limit orders: a bid and ask
+        - if n_bid or n_ask < 0.5, will not bid or ask """
         # make sure that bid price is always less than ask price
-        bid_price = np.clip(bid_price, 0, min(bid_price, o_ask_price))
-        ask_price = np.clip(ask_price, max(o_bid_price, ask_price), np.inf)
+        bid_price = np.clip(bid_price, 0, min(bid_price, self.book.low_ask))
+        ask_price = np.clip(ask_price, max(self.book.high_bid, ask_price), np.inf)
         # can only bid integer multiples
         n_bid = round(n_bid)
         n_ask = round(n_ask)
@@ -190,7 +185,7 @@ class MarketMaker():
 
     # --- REWARD FUNCTIONS --- #
     # objective with no inventory dynamics?
-    def frozen_value(self, initial_wealth, stock_val, nstocks, time_left):
+    def frozen_reward(self, initial_wealth, stock_val, nstocks, time_left):
         first = -np.exp(-self.gamma*(initial_wealth + nstocks*stock_val))
         second = np.exp((self.gamma*nstocks*self.sigma)**2 * time_left / 2)
         return first * second
@@ -203,112 +198,111 @@ class MarketMaker():
     def final_reward(wealth, inventory, midprice):
         return -np.exp(-(wealth + inventory*midprice))
 
-    def simulate(self, num=1000):
-        """ Sample a batch of trajectories under some policy
-        - returns (trajectories, rewards)
+    def reservation_price(self, midprice, inventory, t_left):  # reservation / indifference price
+        return midprice - inventory * self.gamma * self.sigma**2 * t_left
+
+    def optimal_spread(self, time_left):
+        return self.gamma * self.sigma**2 * time_left + 2*np.log(1+2*self.gamma/(self.alpha*(self.K_b+self.K_a)))/self.gamma
+    
+    def simulate(self, num = 1000, track_all=False, action=''):
+        """ naively iterate through order book to show evolution over time using current policy algorithm 
+        Sample a batch of trajectories under some policy
+        Inputs:
+        - num = number of trajectories to sample
+        - track_all = keep track of wealth, inventory, midprices over time
+        - action = 'naive' or 'avellaneda', or anything else
+        Output: (trajectories, rewards)
         - trajectories = (num x num_times x val_dim) nd.arary
-        - rewards = (num x num_times) nd.array """
-        times = np.arange(0, self.terminal_time, self.dt)
-        nt = len(times)
+        - rewards = (num x num_times) nd.array
+        if track_all, output: (trajectories, rewards, wealth, inventory, midprices) """
+        T = self.terminal_time; dt = self.dt
+        nt = T // dt
         trajectories = np.empty((num, nt, self.val_dim))
         rewards = np.empty((num, nt))
+        if track_all:  # track all for later plotting?
+            wealth = np.empty((num, nt))
+            inventory = np.empty((num, nt))
+            midprices = np.empty((num, nt))
         with tqdm(total=num) as pbar:
             pbar.set_description("Creating Batch...")
-            for batch in range(num):
+            for b in range(num):
                 self.initialize_book()
-                # run full trajectory, given current policy / state
                 reward_states = []
-                tot_wealth = tot_inventory = 0  # only need for final reward
+                W = self.W
+                I = self.I
+                if track_all:
+                    wealth[b, 0] = self.W
+                    inventory[b, 0] = self.I
+                    midprices[b, 0] = self.book.midprice
                 for t in range(nt):
-                    # observe state
-                    # TUPLE of (n_bid, bid_price, n_ask, ask_price) (of the highest bid & lowest ask)
-                    state = mm.observe_state()
-                    # observe and take action
-                    # TUPLE of (n_bid, bid_price, n_ask, ask_price)
-                    action = mm.act(state)
-                    # step through one market dynamics evolution
-                    # -- perform random market orders
-                    # -- jump to next timestep ??? (implement) ???
-                    dW, dI = mm.market_step()
-                    tot_wealth += dW; tot_inventory += dI  # keep track of total for final reward
-
-                    # store information in trajectory
-                    # TODO: should we add midprice tracking too? no - explicit in avg bid & ask
-                    reward_state = (dW, dI, mm.terminal_time - t*mm.dt)
+                    time_left = (self.teminal_time - t*self.dt,)
+                    state = self.observe_state()
+                    # AVELLANEDA ACTION
+                    if action == 'avellaneda':
+                        action = self.act((W, I)+time_left)
+                    elif action == 'naive':
+                        action = self.act(state)
+                    else:  # use NN policy
+                        action = self.act(state+time_left)
+                    dW, dI = self.market_step()
+                    # OBSERVE / STORE
+                    W += dW; I += dI
+                    if track_all:
+                        wealth[b, t] = wealth[b, t-1] + dW
+                        inventory[b, t] = inventory[b, t-1] + dI
+                        midprices[b, t] = self.book.midprice
+                    #TODO: do we want to reward based on intermediate actual 
+                    # wealth, inventory instead of just dW, dI???
+                    reward_state = (dW, dI) + time_left
                     reward_states.append(reward_state)
-                    trajectories[batch, t] = state + action + reward_state
-                
+                    trajectories[b, t] = state + action + reward_state
                 # --- GET REWARDS from reward_state --- #
-                rewards[batch, -1] = self.final_reward(tot_wealth, tot_inventory, mm.book.midprice)
+                rewards[b, -1] = self.final_reward(wealth[b, -1], inventory[b, -1], midprices[b, -1])
                 for i in range(nt-2, -1, -1):
-                    rewards[batch, i] = self.immediate_reward(reward_states[i]) + mm.gamma*rewards[batch, i+1]
-                
+                    rewards[b, i] = self.immediate_reward(reward_states[i]) + mm.gamma*rewards[b, i+1]
                 pbar.update(1)
-                pbar.set_postfix_str(f"Reward {rewards[batch, -1]}", refresh=True)
+                pbar.set_postfix_str(f"Reward {rewards[b, -1]}", refresh=True)
+        if track_all:
+            return trajectories, rewards, wealth, inventory, midprices
         return trajectories, rewards
     
-    def naive_train(self):
-        """ naively iterate through order book to show evolution over time using current policy algorithm """
-        # initial state of order book
-        self.initialize_book()
-        # random event of market order
-        n_times = int(self.terminal_time / self.dt)
-        wealth = np.zeros(n_times+1)
-        wealth[0] = self.W
-        inventory = np.zeros(n_times+1)
-        inventory[0] = self.I
-        midprices = np.zeros(n_times+1)
-        midprices[0] = self.book.midprice
-        
-        # track a random brownian motion as midprice that is completely 
-        # uncorrelated to the actual LOB for some reason (Ryan)
-        epsilon = 0
-        track_rand_mid = False
-
-        for t in range(1,n_times+1):
-            # OBSERVE STATE
-            state = self.observe_state()
-            # PERFORM ACTION
-            action = self.act(state, naive=1)
-            # RANDOM MARKET EVOLUTION (market orders)
-            dW, dI = self.market_step()
-            # update wealth, inventory tracking
-            wealth[t] = wealth[t-1] + dW
-            inventory[t] = inventory[t-1] + dI
-
-            if track_rand_mid:  # scaled random walk
-                new_eps = np.random.normal(0,self.dt*t)
-                time_drift = self.dt*t*5
-                new_midprice = midprices[t-1]*np.exp(time_drift + self.sigma*(new_eps - epsilon))
-                # clip midprice so that it is within bid, ask spread
-                midprices[t] = np.clip(new_midprice, self.book.high_bid, self.book.low_ask)
-                epsilon = new_eps
-            else:  # just track the actual midpric e
-                midprices[t] = self.book.midprice
-
-            # -- TRAIN REWARD FUNCTION -- #
-            value_state = state + (wealth[t], midprices[t], inventory[t], self.terminal_time - t*self.dt)
-            reward   = self.frozen_value(wealth[t], midprices[t], inventory[t], self.terminal_time - t*self.dt)
-            new_val  = torch.from_numpy(reward)
-            pred_val = self.value(value_state)
-            loss = -(new_val - pred_val)
-            self.value_optimizer.zero_grad()
-            loss.backward()
-            self.value_optimizer.step()
-
-        # plot wealth, inventory, midprices over time
-        self.book.plot()
+    def plot(self, wealth, inventory, midprices, title=''):
+        """ plot hshit """
+        times = np.arange(0, self.terminal_time, self.dt)
         fig, axs = plt.subplots(3,1, figsize=(10,8))
+        for i, y, name in zip((0,1,2),[wealth, inventory, midprices],'Wealth', 'Inventory', 'Midprice'):
+            ax = axs[i]
+            ax.plot(times, y)
+            ax.set(xlabel="Time")
+            ys = np.mean(y, axis=0)
+            yerrs = stats.sem(y, axis=0)
+            ax.fill_between(times, ys - yerrs, ys + yerrs, alpha=0.25)
+            ax.plot(times, ys, label=name)
         axs[2].set(xlabel="Time")
-        axs[0].set(ylabel='Wealth')
-        axs[1].set(ylabel='Inventory')
-        axs[2].set(ylabel='Midprice')
-        axs[0].plot(wealth)
         axs[0].plot(wealth + inventory*midprices,label='Total Value')
-        axs[1].plot(inventory)
-        axs[2].plot(midprices)
         axs[0].legend()
+        if title: plt.title(title)
         plt.show()
+    
+    def get_advantages(self, rewards, trajectories):
+        """ Compute advantages from rewards and trajectories 
+        - 1. run value network on trajecotires """
+        advantages = np.zeros_like(rewards)
+        advantage = 0
+        for t in reversed(range(len(rewards))):
+            advantage = rewards[t] + self.gamma * advantage
+            advantages[t] = advantage
+        return advantages
+
+
+    def train_value(self):
+        # -- TRAIN REWARD FUNCTION -- #
+        new_val  = np2torch(reward)
+        pred_val = self.value(value_state)
+        loss = -torch.mean((new_val - pred_val)**2)
+        self.value_optimizer.zero_grad()
+        loss.backward()
+        self.value_optimizer.step()
 
 
 # ---- MONTE CARLO TRAIN THIS ---- #
@@ -336,10 +330,10 @@ def train_market():
     mm = MarketMaker(0, 0, dt=dt, gamma=1, sigma=1, terminal_time=terminal_time)
 
     #trajectores[:obs_dim], [obs_dim:act_dim], [act_dim:] for observations, actions, values
-    trajectories, rewards = mm.simulate(mm, batch_size = 1000)
+    trajectories, rewards, wealth, inventory, midprice = mm.simulate(mm, batch_size = 1000, track_all=True)
+    mm.plot(wealth, inventory, midprice, title='1000 batches')
     # (batch_size x nt x value_dim), (batch_size x nt)
     # initialize policy function in self.policy and value in self.value
-    trajectories = 
     mm.initialize_networks(value_dim=value_dim)
     # backpropagate through trajectory to define reward from t?
     loss = -(rewards - mm.value(trajectories)).mean()

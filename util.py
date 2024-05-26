@@ -1,3 +1,9 @@
+"""
+set all utility functions! 
+- import mpl from util in order to get the right colors
+- import np from util in order to get the right print options
+- use np2torch to convert np arrays to torch tensors
+"""
 import numpy as np
 from glob import glob
 from cycler import cycler
@@ -10,13 +16,6 @@ from tqdm import tqdm
 import torch.nn as nn
 import torch
 
-"""
-set all utility functions! 
-- import mpl from util in order to get the right colors
-- import np from util in order to get the right print options
-- use np2torch to convert np arrays to torch tensors
-"""
-
 # blue = bids, red = asks
 #           |   Blue  |   Red  |  Orange |  Purple | Yellow  |   Green |   Teal  | Grey
 hexcolors = ['648FFF', 'DC267F', 'FE6100', '785EF0', 'FFB000', '009E73', '3DDBD9', '808080']
@@ -26,6 +25,7 @@ FIGSIZE = (10,6)
 SAVEDIR = os.getcwd()+"/"
 SAVEEXT = ".png"
 np.set_printoptions(precision=4)
+
 
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 def np2torch(x, cast_double_to_float=True):

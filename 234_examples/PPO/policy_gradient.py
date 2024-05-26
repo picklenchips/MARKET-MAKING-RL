@@ -313,7 +313,7 @@ class PolicyGradient(object):
 
             # advantage will depend on the baseline implementation
             advantages = self.calculate_advantage(returns, observations)
-
+            
             # run training operations
             if self.config.use_baseline:
                 self.baseline_network.update_baseline(returns, observations)

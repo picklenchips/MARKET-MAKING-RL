@@ -6,18 +6,6 @@ from tqdm import tqdm
 from scipy import stats
 import argparse
 
-class Exponential(torch.nn.Module):
-    def __init__(self):
-        super().__init__()
-        self.a = torch.nn.Parameter(torch.randn(()))
-        self.b = torch.nn.Parameter(torch.randn(()))
-
-    def forward(self, x):
-        return -abs(self.a) * torch.exp(-abs(self.b) * x)
-
-    def string(self):
-        return f'y = -{abs(self.a.item())} * exp(-{abs(self.b.item())} x)'
-
 class MarketMaker():
     def __init__(self, inventory, wealth, dt=1e-3, 
                  gamma=1, sigma=1e-2, terminal_time=1,
@@ -270,7 +258,7 @@ class MarketMaker():
         return returns
     
     def plot(self, wealth, inventory, midprices, title=''):
-        """ plot stuff 
+        """ plot data from a batch of trajectories
         Inputs: (nbatch x nt) np.ndarrays """
         times = np.arange(0, self.terminal_time, self.dt)
         fig, axs = plt.subplots(3,1, figsize=(10,8))
@@ -347,7 +335,7 @@ def train_market(num_epochs = 100, batch_size = 100, timesteps = 1000):
         pbar.set_description("Training Market Maker...")
         for epoch in range(num_epochs):
             trajectories, rewards, wealth, inventory, midprice = mm.simulate(nbatch = batch_size, track_all=True)
-            mm.plot(wealth, inventory, midprice, title=f'{batch_size} batches')
+            mm.plot(wealth, inventory, midprice, title=f'epoch {epoch}')
             returns = mm.get_returns(rewards)
             advantages = mm.get_advantages(trajectories, returns)
             mm.update_value(trajectories, returns)

@@ -43,6 +43,19 @@ def build_mlp(input_size, output_size, n_layers, hidden_size):
     layers.append(nn.Linear(hidden_size, output_size))
     return nn.Sequential(*layers)
 
+""" Used for exponential value functions """
+class Exponential(torch.nn.Module):
+    def __init__(self):
+        super().__init__()
+        self.a = torch.nn.Parameter(torch.randn(()))
+        self.b = torch.nn.Parameter(torch.randn(()))
+
+    def forward(self, x):
+        return -abs(self.a) * torch.exp(-abs(self.b) * x)
+
+    def string(self):
+        return f'y = -{abs(self.a.item())} * exp(-{abs(self.b.item())} x)'
+
 # random functions
 def uFormat(number, uncertainty, round = 0, sig_figs = 4, FormatDecimals = False):
     """

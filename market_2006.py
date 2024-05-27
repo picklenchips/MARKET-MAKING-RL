@@ -62,13 +62,16 @@ class MarketMaker():
         self.val_dim = value_dim
         self.policy = nn.Sequential(nn.Linear(obs_dim, hidden_dim),
                                     nn.LeakyReLU(),
+                                    nn.Linear(hidden_dim, hidden_dim),
+                                    nn.LeakyReLU(),
                                     nn.Linear(hidden_dim, act_dim))
         self.policy_optimizer = torch.optim.Adam(self.policy.parameters(), lr=1e-3)
         # VALUE NETWORK
         self.value = nn.Sequential(nn.Linear(value_dim, hidden_dim), 
                                    nn.LeakyReLU(),
-                                   nn.Linear(hidden_dim, 1),
-                                   Exponential())
+                                   nn.Linear(hidden_dim, hidden_dim),
+                                   nn.LeakyReLU(),
+                                   nn.Linear(hidden_dim, 1))
         self.value_optimizer = torch.optim.Adam(self.value.parameters(), lr=1e-3)
     
 # --- ENVIRONMENT / DYNAMICS --- #
@@ -99,7 +102,7 @@ class MarketMaker():
         self.book = OrderBook()
         self.book.bid(initial_num_stocks//2, initial_midprice-initial_spread/2)
         self.book.ask(initial_num_stocks-initial_num_stocks//2, initial_midprice+initial_spread/2)
-        # keep track 
+        # keep track
         for t in range(nsteps):
             # perform random MARKET ORDERS
             dW, dI = self.market_step()
@@ -184,8 +187,8 @@ class MarketMaker():
             r_state = np.array(r_state)
         return self.a*r_state[...,0] + np.exp(-self.b*r_state[...,2]) * np.sign(r_state[...,1])
     
-    def final_reward(self, wealth, inventory, midprice):
-        return -np.exp(-(wealth + inventory*midprice))
+    def final_reward(self, dW, inventory, midprice):
+        return dW + inventory*midprice
 
     def reservation_price(self, midprice, inventory, t_left):  # reservation / indifference price
         return midprice - inventory * self.gamma * self.sigma**2 * t_left
@@ -245,7 +248,7 @@ class MarketMaker():
                     rewards[b, t] = self.immediate_reward(reward_state)
                     trajectories[b, t] = state + action + reward_state
                 # --- GET REWARDS from reward_state --- #
-                rewards[b, t] = self.final_reward(wealth[b, -1], inventory[b, -1], midprices[b, -1])
+                rewards[b, t] = self.final_reward(dW, inventory[b, -1], midprices[b, -1])
                 pbar.update(1)
                 pbar.set_postfix_str(f"Reward {rewards[b, -1]}", refresh=True)
         if track_all:
@@ -263,7 +266,7 @@ class MarketMaker():
             returns = torch.empty_like(rewards)
         nt = rewards.shape[1]
         for t in range(nt-2, -1, -1):
-            returns[:, t] = rewards[:, t] + self.gamma*rewards[:, t+1]
+            returns[:, t] = rewards[:, t] + self.discount*rewards[:, t+1]
         return returns
     
     def plot(self, wealth, inventory, midprices, title=''):
@@ -273,17 +276,17 @@ class MarketMaker():
         fig, axs = plt.subplots(3,1, figsize=(10,8))
         for i, y, name in zip((0,1,2),(wealth, inventory, midprices),('Wealth', 'Inventory', 'Midprice')):
             ax = axs[i]
-            ax.set(xlabel="Time")
+            ax.set(ylabel=name)
             ys = np.mean(y, axis=0)
             yerrs = stats.sem(y, axis=0)
-            ax.fill_between(times, ys - yerrs, ys + yerrs, alpha=0.25, cmap=f"C{i}")
-            ax.plot(times, ys, label=name, cmap=f"C{i}")
+            ax.fill_between(times, ys - yerrs, ys + yerrs, alpha=0.25, color=f"C{i}")
+            ax.plot(times, ys, color=f"C{i}")
         axs[2].set(xlabel="Time")
         i += 1
         y = wealth + inventory*midprices
         ys = np.mean(y, axis=0); yerrs = stats.sem(y, axis=0)
-        axs[0].fill_between(times, ys - yerrs, ys + yerrs, alpha=0.25, cmap=f"C{i}")
-        axs[0].plot(times, ys, label='Total Value', cmap=f"C{i}")
+        axs[0].fill_between(times, ys - yerrs, ys + yerrs, alpha=0.25, color=f"C{i}")
+        axs[0].plot(times, ys, label='Total Value', color=f"C{i}")
         axs[0].legend()
         if title: plt.title(title)
         plt.show()
@@ -294,14 +297,15 @@ class MarketMaker():
         - returns (nbatch x nt) np.ndarray
         - trajectories (nbatch x nt x val_dim) np.ndarray
         - run value network on trajectories to get value estimates """
+        trajectories = np2torch(trajectories)
         advantages = returns - self.value(trajectories).squeeze().detach().cpu().numpy()
         return (advantages - advantages.mean()) / (advantages.std())
 
     def update_value(self, trajectories, returns):
         """ use MSE loss to train value function 
         Inputs: returns (nbatch x nt) np.ndarray, trajectories (nbatch x nt x val_dim) np.ndarray """
-        act_val  = np2torch(returns)
-        pred_val = self.value(np2torch(trajectories)).squeeze()
+        act_val  = np2torch(returns); trajectories = np2torch(trajectories)
+        pred_val = self.value(trajectories).squeeze()
         loss = torch.mean((act_val - pred_val)**2)
         self.value_optimizer.zero_grad()
         loss.backward()
@@ -311,7 +315,9 @@ class MarketMaker():
         """ use MSE loss to train policy function """
         trajectories = np2torch(trajectories)
         advantages = np2torch(advantages)
-        states = torch.cat((trajectories[...,:self.obs_dim], trajectories[...,-1]), dim=-1)
+        print(trajectories.shape, advantages.shape)
+        
+        states = torch.cat((trajectories[..., :self.obs_dim], trajectories[..., -1]), dim=-1)
         actions = self.policy(states)
         loss = -torch.mean(advantages * torch.log(actions))
         self.policy_optimizer.zero_grad()

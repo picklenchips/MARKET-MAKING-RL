@@ -11,7 +11,10 @@ SAVEDICT = os.getcwd()+'/trained_models/'
 
 class MarketMaker():
     """ Market Maker Class, using MC returns and a deterministic policy
-    TODO: work with self.midprice as a "global" midrpice, cahnge its dynamics """
+    TODO: work with self.midprice as a "global" midprice for the stock, 
+          change its dynamics in market_step() and observe it in simulate() 
+          and observe_state() needs to update delta_a, delta_b as well
+          oof we lowkey need to change LOB to incorporate this as well """
     def __init__(self, inventory, wealth, dt=1e-3, 
                  gamma=1, sigma=1e-2, terminal_time=1,
                  discount=0.99):
@@ -24,7 +27,7 @@ class MarketMaker():
         # alpha is 1.53 for US stocks and 1.4 for NASDAQ stocks
         self.alpha = 1.53
         self.Lambda_b = 20  # average "volume" of market orders at each step
-        self.Lambda_s = 20
+        self.Lambda_s = 20  
         self.K_b = 1  # as K increases, rate w delta decreases
         self.K_s = 1
         # action stuff

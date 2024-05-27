@@ -1,9 +1,10 @@
 from limit_order_book import OrderBook
-from util import uFormat, mpl, plt, np, np2torch
+from util import uFormat, mpl, plt, np, np2torch, build_mlp
 import torch
 import torch.nn as nn
 from tqdm import tqdm
 from scipy import stats
+from glob import glob
 import argparse
 
 class MarketMaker():
@@ -18,9 +19,9 @@ class MarketMaker():
         # rate of market orders
         # alpha is 1.53 for US stocks and 1.4 for NASDAQ stocks
         self.alpha = 1.53
-        self.Lambda_b = 1
-        self.Lambda_s = 1
-        self.K_b = 1
+        self.Lambda_b = 20  # average "volume" of market orders at each step
+        self.Lambda_s = 20
+        self.K_b = 1  # as K increases, rate w delta decreases
         self.K_s = 1
         # action stuff
         self.sigma = sigma
@@ -36,35 +37,27 @@ class MarketMaker():
         self.b = 1  # how much we weigh dI
         self.discount = discount
     
-    def initialize_networks(self, obs_dim=5, act_dim=4, value_dim=11, hidden_dim=10):
+    def initialize_networks(self, obs_dim=5, act_dim=4, value_dim=11, hidden_dim=10, lr=1e-3):
         """ set policy and value networks 
         - value_dim can change depending on if we track (obs, rew) or 
         - (obs, act, rew) or (obs, obs1, rew) or (obs, act, obs1, rew) or ..."""
-        #obs_dim = 4  # (n_bid, bid_price, n_ask, ask_price)
-        #act_dim = 4  # (n_bid, bid_price, n_ask, ask_price)
-        #rew_dim = 4  # (wealth[t-1], inventory[t-1], midprices[t-1], time_left)
         #hidden_dim = 10
         # POLICY NETWORK
-        self.obs_dim = obs_dim
-        self.act_dim = act_dim
-        self.val_dim = value_dim
-        self.policy = nn.Sequential(nn.Linear(obs_dim, hidden_dim),
-                                    nn.LeakyReLU(),
-                                    nn.Linear(hidden_dim, hidden_dim),
-                                    nn.LeakyReLU(),
-                                    nn.Linear(hidden_dim, act_dim))
-        self.policy_optimizer = torch.optim.Adam(self.policy.parameters(), lr=1e-3)
+        nlayers = 2
+        self.obs_dim = obs_dim  # (n_bid, bid_price, n_ask, ask_price, time_left)
+        self.act_dim = act_dim  # (n_bid, bid_price, n_ask, ask_price)
+        # [(n_bid, bid_price, n_ask, ask_price)s, (n_bid, bid_price, n_ask, ask_price)a, (dW, dI, time_left)r)
+        self.val_dim = value_dim  
+        # POLICY NETWORK
+        self.policy = build_mlp(obs_dim, act_dim, nlayers, hidden_dim)
+        self.policy_optimizer = torch.optim.Adam(self.policy.parameters(), lr)
         # VALUE NETWORK
-        self.value = nn.Sequential(nn.Linear(value_dim, hidden_dim), 
-                                   nn.LeakyReLU(),
-                                   nn.Linear(hidden_dim, hidden_dim),
-                                   nn.LeakyReLU(),
-                                   nn.Linear(hidden_dim, 1))
-        self.value_optimizer = torch.optim.Adam(self.value.parameters(), lr=1e-3)
+        self.value = build_mlp(value_dim, 1, nlayers, hidden_dim)
+        self.value_optimizer = torch.optim.Adam(self.value.parameters(), lr)
     
 # --- ENVIRONMENT / DYNAMICS --- #
     def lambda_buy(self, delta_a):
-        k = self.alpha * self.K_b                                                                                                                                                                                                                                                      
+        k = self.alpha * self.K_b
         A = self.Lambda_b / self.alpha
         return A * np.exp(-k*delta_a)
 
@@ -73,18 +66,20 @@ class MarketMaker():
         A = self.Lambda_s / self.alpha
         return A * np.exp(-k*delta_b)
     
-    def market_step(self):
+    def market_step(self, nsteps=1):
         """ Evolve market order book with market orders 
         - returns change in wealth, inventory (dW, dI) """
-        delta_b = self.book.delta_b; delta_a = self.book.delta_a
-        nbuy  = np.random.poisson(self.lambda_buy(delta_a))
-        nsell = np.random.poisson(self.lambda_sell(delta_b))
-        n_ask_lift, bought = self.book.buy(nbuy)
-        n_bid_hit, sold = self.book.sell(nsell)
-        return bought - sold, n_bid_hit - n_ask_lift
+        dW = dI = 0
+        for step in range(nsteps):
+            delta_b = self.book.delta_b; delta_a = self.book.delta_a
+            nbuy  = np.random.poisson(self.lambda_buy(delta_a))
+            nsell = np.random.poisson(self.lambda_sell(delta_b))
+            n_ask_lift, bought = self.book.buy(nbuy)
+            n_bid_hit, sold = self.book.sell(nsell)
+            dW += bought - sold; dI += n_bid_hit - n_ask_lift
+        return dW, dI
 
-    def initialize_book(self, initial_midprice=100, initial_spread=10, initial_num_stocks=100, 
-                        nsteps=30):
+    def initialize_book(self, initial_midprice=100, initial_spread=10, initial_num_stocks=100, nsteps=100, substeps=1):
         """ Randomly initialize order book """
         if self.book: del(self.book)
         self.book = OrderBook()
@@ -93,12 +88,12 @@ class MarketMaker():
         # keep track
         for t in range(nsteps):
             # perform random MARKET ORDERS
-            dW, dI = self.market_step()
+            dW, dI = self.market_step(substeps)
             # can keep track of wealth, inventory changes maybe
             # wealth += bought - sold
             state  = self.observe_state()
             # perform random LIMIT ORDERS
-            action = self.act(state)
+            self.act(state)
 
 # --- STATES / ACTIONS --- #
     def observe_state(self):
@@ -128,8 +123,8 @@ class MarketMaker():
             n_bid, bid_price, n_ask, ask_price = state
             bid_price = np.random.normal(bid_price, delta_b/4)
             ask_price = np.random.normal(ask_price, delta_a/4)
-            n_bid = np.random.poisson(n_bid)
-            n_ask = np.random.poisson(n_ask) 
+            n_bid = np.random.poisson(n_bid/2)
+            n_ask = np.random.poisson(n_ask/2) 
             action = (n_bid, bid_price, n_ask, ask_price)
         if len(state) == 3:  # avellaneda policy
             wealth, inventory, time_left = state
@@ -197,9 +192,9 @@ class MarketMaker():
         - rewards = (nbatch x num_times) nd.array
         if track_all, output: (trajectories, rewards, wealth, inventory, midprices) """
         T = self.terminal_time; dt = self.dt
-        nt = int(T/dt)
-        trajectories = np.empty((nbatch, nt, self.val_dim))
-        rewards = np.empty((nbatch, nt))
+        nt = int(T/dt) + 1
+        trajectories = np.zeros((nbatch, nt, self.val_dim))
+        rewards = np.zeros((nbatch, nt))
         if track_all:  # track all for later plotting?
             wealth = np.empty((nbatch, nt))
             inventory = np.empty((nbatch, nt),dtype=int)
@@ -213,7 +208,7 @@ class MarketMaker():
                     wealth[b, 0] = self.W
                     inventory[b, 0] = self.I
                     midprices[b, 0] = self.book.midprice
-                for t in range(nt):
+                for t in range(nt - 1):
                     time_left = (self.terminal_time - t*self.dt,)
                     state = self.observe_state()
                     # AVELLANEDA ACTION
@@ -226,10 +221,12 @@ class MarketMaker():
                     dW, dI = self.market_step()
                     # OBSERVE / STORE
                     W += dW; I += dI
+                    if dI > 10: 
+                        print(f"Inventory: {I}, Wealth: {W}")
                     if track_all:
-                        wealth[b, t] = wealth[b, t-1] + dW
-                        inventory[b, t] = inventory[b, t-1] + dI
-                        midprices[b, t] = self.book.midprice
+                        wealth[b, t+1] = wealth[b, t] + dW
+                        inventory[b, t+1] = inventory[b, t] + dI
+                        midprices[b, t+1] = self.book.midprice
                     #TODO: do we want to reward based on intermediate actual 
                     # wealth, inventory instead of just dW, dI???
                     reward_state = (dW, dI) + time_left
@@ -260,7 +257,7 @@ class MarketMaker():
     def plot(self, wealth, inventory, midprices, title=''):
         """ plot data from a batch of trajectories
         Inputs: (nbatch x nt) np.ndarrays """
-        times = np.arange(0, self.terminal_time, self.dt)
+        times = np.arange(0, self.terminal_time + self.dt, self.dt)
         fig, axs = plt.subplots(3,1, figsize=(10,8))
         for i, y, name in zip((0,1,2),(wealth, inventory, midprices),('Wealth', 'Inventory', 'Midprice')):
             ax = axs[i]
@@ -276,7 +273,7 @@ class MarketMaker():
         axs[0].fill_between(times, ys - yerrs, ys + yerrs, alpha=0.25, color=f"C{i}")
         axs[0].plot(times, ys, label='Total Value', color=f"C{i}")
         axs[0].legend()
-        if title: plt.title(title)
+        if title: axs[0].set_title(title)
         plt.show()
 
 # --- TRAINING --- #
@@ -305,7 +302,7 @@ class MarketMaker():
         advantages = np2torch(advantages)
         states = trajectories[..., [0,1,2,3,-1]]
         actions = self.policy(states)
-        loss = -torch.log(advantages[...,None] * torch.log(actions))
+        loss = torch.log(advantages[...,None] * torch.log(actions))
         loss = loss.mean()
         self.policy_optimizer.zero_grad()
         loss.backward()
@@ -316,17 +313,23 @@ class MarketMaker():
 # tuple of time, wealth_diff, inventory_diff, midprice_diff
 # from https://discovery.ucl.ac.uk/id/eprint/10116730/1/RLforHFMM.pdf 
 
-def train_market(num_epochs = 100, batch_size = 100, timesteps = 1000):
-    """ Monte-Carlo Ish Thing """
-    obs_dim = act_dim = 4
-    rew_dim = 3
-    value_dim = obs_dim + act_dim + rew_dim
+def train_market(num_epochs = 100, batch_size = 1000, timesteps = 5000, plot_after=1000):
+    """ Monte-Carlo Ish Thing 
+    - plot_after some number of epochs"""
+    obs_dim = 4; act_dim = 4
+    rew_dim = 2
+    value_dim = obs_dim + act_dim + rew_dim + 1  # track time left
+    # update policy every x epochs
+    #TODO: i dont think we need this for MC, as each trajectory is long enough 
+    # and we're not really producing a mega-batch of trajectories, advantages to then 
+    # update the policy on later
+    # 
+    policy_update = 1
 
     # initialize parameters
     dt = 0.005
-    nt = timesteps  
+    nt = timesteps 
     terminal_time = nt*dt
-    times = np.arange(0, terminal_time, dt)
 
     mm = MarketMaker(0, 0, dt=dt, gamma=1, sigma=1, terminal_time=terminal_time)
     mm.initialize_networks(value_dim=value_dim)
@@ -335,19 +338,36 @@ def train_market(num_epochs = 100, batch_size = 100, timesteps = 1000):
         pbar.set_description("Training Market Maker...")
         for epoch in range(num_epochs):
             trajectories, rewards, wealth, inventory, midprice = mm.simulate(nbatch = batch_size, track_all=True)
-            mm.plot(wealth, inventory, midprice, title=f'epoch {epoch}')
+            if epoch + 1 % plot_after == 0:
+                mm.plot(wealth, inventory, midprice, title=f'epoch {epoch}')
             returns = mm.get_returns(rewards)
             advantages = mm.get_advantages(trajectories, returns)
             mm.update_value(trajectories, returns)
-            mm.update_policy(trajectories, advantages)
+            if epoch + 1 % policy_update == 0:
+                mm.update_policy(trajectories, advantages)
             pbar.update(1)
             pbar.set_postfix_str(f"Reward {rewards[:,-1].mean()}", refresh=True)
+    
+    # saved trained models
+    save_dict = './trained_models/'
+    name = f"MC_val_{num_epochs}_{batch_size}_{timesteps}.pth"
+    torch.save(mm.value.state_dict(), save_dict+name)
+    name[3:6] = 'pol'
+    torch.save(mm.policy.state_dict(), save_dict+name)
+
 
 parser = argparse.ArgumentParser()
 parser.add_argument("-ne", "-n_epochs", dest='ne', type=int, default=100)
-parser.add_argument("-nb", "-n_batches", dest='nb', type=int, default=100)
+parser.add_argument("-nb", "-n_batches", dest='nb', type=int, default=1000)
 parser.add_argument("-nt", "-n_times", dest='nt', type=int, default=10000)
+parser.add_argument("-test_initialization", dest='testinitial', default=False, action='store_true')
 
 if __name__ == "__main__":
     args = parser.parse_args()
-    train_market(args.ne, args.nb, args.nt)
+    if args.testinitial: 
+        mm = MarketMaker(0, 0)
+        while input("Continue? (y/n): ").strip().lower() == 'y':
+            mm.initialize_book(nsteps=100)
+            mm.book.plot()
+    else:
+        train_market(args.ne, args.nb, args.nt)

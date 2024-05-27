@@ -6,9 +6,12 @@ import torch.optim as optim
 import torch.nn.functional as F
 
 from util import np2torch
+from market_2006 import MarketMaker
 
-class PPO:
+""" use a stochastic policy and run PPO """
+class PPO(MarketMaker):
     def __init__(self, input_dim, output_dim, hidden_dim=64, lr=0.001, gamma=0.99, clip_ratio=0.2, value_coef=0.5, entropy_coef=0.01):
+        super().__init__()
         self.input_dim = input_dim
         self.output_dim = output_dim
         self.hidden_dim = hidden_dim

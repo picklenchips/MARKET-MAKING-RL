@@ -34,12 +34,12 @@ def np2torch(x, cast_double_to_float=True):
         x = x.float()
     return x
 
-def build_mlp(input_size, output_size, n_layers, hidden_size):
+def build_mlp(input_size, output_size, n_layers, hidden_size, activation=nn.ReLU()):
     """ Build multi-layer perception with n_layers hidden layers of size hidden_size """
-    layers = [nn.Linear(input_size,hidden_size),nn.ReLU()]
+    layers = [nn.Linear(input_size,hidden_size),activation]
     for i in range(n_layers-1):
         layers.append(nn.Linear(hidden_size,hidden_size))
-        layers.append(nn.ReLU())
+        layers.append(activation)
     layers.append(nn.Linear(hidden_size, output_size))
     return nn.Sequential(*layers)
 
@@ -56,7 +56,7 @@ class Exponential(torch.nn.Module):
     def string(self):
         return f'y = -{abs(self.a.item())} * exp(-{abs(self.b.item())} x)'
 
-# random functions
+# --- robust number formatting to sig_figs
 def uFormat(number, uncertainty, round = 0, sig_figs = 4, FormatDecimals = False):
     """
     Returns "num_rounded(with_sgnfcnt_dgts_ofuncrtnty)", formatted to 10^round
@@ -215,6 +215,7 @@ def uFormat(number, uncertainty, round = 0, sig_figs = 4, FormatDecimals = False
         end = '(' + Err + ')' + end
     return Num + end
 
+# wrapper printing time a function runs in, use @timeIt before function def
 def timeIt(func):
     """@ timeIt: Wrapper to print run time of a function."""
     def wrapper(*args, **kwargs):
@@ -226,10 +227,11 @@ def timeIt(func):
         return res
     return wrapper
 
+# search for first instance of X_val in array X
 def binarySearch(X_val, X, decreasing=False):
     """
-    For sorted X, returns index i such that X[:i] < X_val, X[i:] >= X_val
-     - if decreasing,returns i such that    X[:i] > X_val, X[i:] <= X_val
+    For sorted X, returns i such that X[:i] < X_val, X[i:] >= X_val
+     - if decreasing, returns i such that    X[:i] > X_val, X[i:] <= X_val
     """
     l = 0; r = len(X) - 1
     #print(f"searching for {X_val}, negative={negative}")

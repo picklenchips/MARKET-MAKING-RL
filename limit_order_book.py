@@ -96,7 +96,7 @@ class OrderBook():
         return n_sold, total_sold
 
     def bid(self, nstocks: int, price: float):
-        """Add a limit-buy order. Sorted highest-to-lowest"""
+        """ Add a limit-buy order. Sorted highest-to-lowest """
         price = round(price, 2)  # can only buy/sell in cents
         # buying higher than lowest sell -> market buy instead
         if len(self.asks):
@@ -110,7 +110,7 @@ class OrderBook():
             self.recalculate()
 
     def ask(self, nstocks: int, price: float):
-        """Add a limit-sell order"""
+        """ Add a limit-sell order """
         price = round(price, 2)  # can only buy/sell in cents
         # selling lower than highest buy order -> sell some now!
         if len(self.bids):

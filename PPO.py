@@ -6,7 +6,7 @@ import torch.optim as optim
 import torch.nn.functional as F
 
 from util import np2torch
-from market_2006 import MarketMaker
+from base_market import MarketMaker
 
 """ use a stochastic policy and run PPO """
 class PPO(MarketMaker):

@@ -5,9 +5,13 @@ import torch.nn as nn
 from tqdm import tqdm
 from scipy import stats
 from glob import glob
-import argparse
+import argparse, os
+
+SAVEDICT = os.getcwd()+'/trained_models/'
 
 class MarketMaker():
+    """ Market Maker Class, using MC returns and a deterministic policy
+    TODO: work with self.midprice as a "global" midrpice, cahnge its dynamics """
     def __init__(self, inventory, wealth, dt=1e-3, 
                  gamma=1, sigma=1e-2, terminal_time=1,
                  discount=0.99):
@@ -28,10 +32,6 @@ class MarketMaker():
         self.gamma = gamma 
         self.terminal_time = terminal_time  # second
         self.dt = dt   # millisecond
-        # NN dimensions
-        self.obs_dim = 4
-        self.act_dim = 4
-        self.val_dim = 8
         # reward stuff
         self.a = 1  # how much we weigh dW
         self.b = 1  # how much we weigh dI
@@ -79,18 +79,16 @@ class MarketMaker():
             dW += bought - sold; dI += n_bid_hit - n_ask_lift
         return dW, dI
 
-    def initialize_book(self, initial_midprice=100, initial_spread=10, initial_num_stocks=100, nsteps=100, substeps=1):
+    def initialize_book(self, mid=100, spread=10, nstocks=100, nsteps=100, substeps=1):
         """ Randomly initialize order book """
         if self.book: del(self.book)
         self.book = OrderBook()
-        self.book.bid(initial_num_stocks//2, initial_midprice-initial_spread/2)
-        self.book.ask(initial_num_stocks-initial_num_stocks//2, initial_midprice+initial_spread/2)
-        # keep track
+        self.book.bid(nstocks//2, mid-spread/2)
+        self.book.ask(nstocks//2, mid+spread/2)
+        self.midprice = mid
         for t in range(nsteps):
             # perform random MARKET ORDERS
             dW, dI = self.market_step(substeps)
-            # can keep track of wealth, inventory changes maybe
-            # wealth += bought - sold
             state  = self.observe_state()
             # perform random LIMIT ORDERS
             self.act(state)
@@ -308,6 +306,23 @@ class MarketMaker():
         loss.backward()
         self.policy_optimizer.step()
 
+# --- SAVE / LOAD --- #
+    def save(self,ne, nb, nt, name='MC'):
+        """ Save a pretrained market maker model """
+        name = f"{SAVEDICT}{name}_{ne}_{nb}_{nt}_"
+        torch.save(self.value.state_dict(), name+"val.pth")
+        print(f"Saved value network to {name}val.pth")
+        torch.save(self.policy.state_dict(), name+"pol.pth")
+        print(f"Saved policy network to {name}pol.pth")
+
+    def load(self, ne, nb, nt, name='MC'):
+        """ Return a pretrained market maker model """
+        name = f"{SAVEDICT}{name}_{ne}_{nb}_{nt}_"
+        self.initialize_networks()
+        self.value.load_state_dict(torch.load(name+"val.pth"))
+        self.policy.load_state_dict(torch.load(name+"pol.pth"))
+        print(f"Loaded networks from {name}(val,pol).pth")
+
 # ---- MONTE CARLO TRAIN THIS ---- #
 
 # tuple of time, wealth_diff, inventory_diff, midprice_diff
@@ -323,7 +338,6 @@ def train_market(num_epochs = 100, batch_size = 1000, timesteps = 5000, plot_aft
     #TODO: i dont think we need this for MC, as each trajectory is long enough 
     # and we're not really producing a mega-batch of trajectories, advantages to then 
     # update the policy on later
-    # 
     policy_update = 1
 
     # initialize parameters
@@ -347,27 +361,33 @@ def train_market(num_epochs = 100, batch_size = 1000, timesteps = 5000, plot_aft
                 mm.update_policy(trajectories, advantages)
             pbar.update(1)
             pbar.set_postfix_str(f"Reward {rewards[:,-1].mean()}", refresh=True)
-    
-    # saved trained models
-    save_dict = './trained_models/'
-    name = f"MC_val_{num_epochs}_{batch_size}_{timesteps}.pth"
-    torch.save(mm.value.state_dict(), save_dict+name)
-    name[3:6] = 'pol'
-    torch.save(mm.policy.state_dict(), save_dict+name)
-
+    mm.save(num_epochs, batch_size, timesteps)
 
 parser = argparse.ArgumentParser()
 parser.add_argument("-ne", "-n_epochs", dest='ne', type=int, default=100)
 parser.add_argument("-nb", "-n_batches", dest='nb', type=int, default=1000)
 parser.add_argument("-nt", "-n_times", dest='nt', type=int, default=10000)
 parser.add_argument("-test_initialization", dest='testinitial', default=False, action='store_true')
+parser.add_argument("-l", "--load", nargs='+', default=[])
 
 if __name__ == "__main__":
     args = parser.parse_args()
+    if len(args.load) >= 3:
+        load = [int(i) for i in args.load[:3]]
+        if len(args.load) > 3:
+            load.append(args.load[3])
+        nb = load[1]  
+        nt = load[2]
+        dt = 0.001
+        mm = MarketMaker(0, 0, dt=dt, terminal_time=nt*dt)
+        mm.load(*load)
+        t, r, w, i, m = mm.simulate(nb, track_all=True)
+        mm.plot(w, i, m, title=f'Loaded Model: {", ".join(args.load)}')
     if args.testinitial: 
+        # test the initialization of the market maker
         mm = MarketMaker(0, 0)
         while input("Continue? (y/n): ").strip().lower() == 'y':
             mm.initialize_book(nsteps=100)
             mm.book.plot()
-    else:
+    elif not args.load:
         train_market(args.ne, args.nb, args.nt)

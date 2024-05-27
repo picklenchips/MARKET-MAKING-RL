@@ -30,8 +30,8 @@ class MarketMaker():
         # rate of market orders
         # alpha is 1.53 for US stocks and 1.4 for NASDAQ stocks
         self.alpha = 1.53
-        self.Lambda_b = 30
-        self.Lambda_s = 30
+        self.Lambda_b = 1
+        self.Lambda_s = 1
         self.K_b = 1
         self.K_s = 1
         # action stuff
@@ -315,11 +315,10 @@ class MarketMaker():
         """ use MSE loss to train policy function """
         trajectories = np2torch(trajectories)
         advantages = np2torch(advantages)
-        print(trajectories.shape, advantages.shape)
-        
-        states = torch.cat((trajectories[..., :self.obs_dim], trajectories[..., -1]), dim=-1)
+        states = trajectories[..., [0,1,2,3,-1]]
         actions = self.policy(states)
-        loss = -torch.mean(advantages * torch.log(actions))
+        loss = -torch.log(advantages[...,None] * torch.log(actions))
+        loss = loss.mean()
         self.policy_optimizer.zero_grad()
         loss.backward()
         self.policy_optimizer.step()
@@ -342,12 +341,11 @@ def train_market(num_epochs = 100, batch_size = 100, timesteps = 1000):
     times = np.arange(0, terminal_time, dt)
 
     mm = MarketMaker(0, 0, dt=dt, gamma=1, sigma=1, terminal_time=terminal_time)
-
+    mm.initialize_networks(value_dim=value_dim)
     #trajectores[:obs_dim], [obs_dim:act_dim], [act_dim:] for observations, actions, values
     with tqdm(total=num_epochs) as pbar:
         pbar.set_description("Training Market Maker...")
         for epoch in range(num_epochs):
-            mm.initialize_networks(value_dim=value_dim)
             trajectories, rewards, wealth, inventory, midprice = mm.simulate(nbatch = batch_size, track_all=True)
             mm.plot(wealth, inventory, midprice, title=f'{batch_size} batches')
             returns = mm.get_returns(rewards)

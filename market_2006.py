@@ -1,31 +1,11 @@
-from limit_order_book import OrderBook, LimitOrder
+from limit_order_book import OrderBook
 from util import uFormat, mpl, plt, np, np2torch
 import torch
 import torch.nn as nn
-import tqdm as tqdm
+from tqdm import tqdm
 from scipy import stats
+import argparse
 
-# v(x,s,q,t), 
-# x = initial wealth, s = initial stock value, q = nstocks, t = time
-def frozen_value(initial_wealth, stock_val, nstocks, time):
-    first = -np.exp(-gamma*(initial_wealth+nstocks*stock_val))
-    second = np.exp((gamma*nstocks*sigma)**2 * (T - time) / 2)
-    return first * second
-
-def res_ask_price(s,q,t):
-    return s + (1-2*q) * gamma * sigma**2 * (T-t)
-
-def res_bid_price(s,q,t):
-    return s - (1+2*q) * gamma * sigma**2 * (T-t)
-
-# avg between bid and ask
-def res_price(s, q, t_left):  # reservation / indifference price
-    return s - q * gamma * sigma**2 * t_left
-
-"""
-model trading intensity.
-assume constant frequency f^Q(x)\alpha x^{-1-\alpha}
-"""
 class Exponential(torch.nn.Module):
     def __init__(self):
         super().__init__()
@@ -38,11 +18,10 @@ class Exponential(torch.nn.Module):
     def string(self):
         return f'y = -{abs(self.a.item())} * exp(-{abs(self.b.item())} x)'
 
-
-
 class MarketMaker():
     def __init__(self, inventory, wealth, dt=1e-3, 
-                 gamma=1, sigma=1e-2, terminal_time=1):
+                 gamma=1, sigma=1e-2, terminal_time=1,
+                 discount=0.99):
         self.I = inventory
         self.W = wealth
         self.book = OrderBook()
@@ -57,15 +36,19 @@ class MarketMaker():
         self.K_s = 1
         # action stuff
         self.sigma = sigma
-        self.gamma = gamma  # discount variable
+        self.gamma = gamma 
         self.terminal_time = terminal_time  # second
         self.dt = dt   # millisecond
         # NN dimensions
         self.obs_dim = 4
         self.act_dim = 4
         self.val_dim = 8
+        # reward stuff
+        self.a = 1  # how much we weigh dW
+        self.b = 1  # how much we weigh dI
+        self.discount = discount
     
-    def initialize_networks(self, obs_dim=4, act_dim=4, value_dim=8, hidden_dim=10):
+    def initialize_networks(self, obs_dim=5, act_dim=4, value_dim=11, hidden_dim=10):
         """ set policy and value networks 
         - value_dim can change depending on if we track (obs, rew) or 
         - (obs, act, rew) or (obs, obs1, rew) or (obs, act, obs1, rew) or ..."""
@@ -74,18 +57,21 @@ class MarketMaker():
         #rew_dim = 4  # (wealth[t-1], inventory[t-1], midprices[t-1], time_left)
         #hidden_dim = 10
         # POLICY NETWORK
+        self.obs_dim = obs_dim
+        self.act_dim = act_dim
+        self.val_dim = value_dim
         self.policy = nn.Sequential(nn.Linear(obs_dim, hidden_dim),
-                                            nn.LeakyReLU(),
-                                            nn.Linear(hidden_dim, act_dim))
+                                    nn.LeakyReLU(),
+                                    nn.Linear(hidden_dim, act_dim))
         self.policy_optimizer = torch.optim.Adam(self.policy.parameters(), lr=1e-3)
         # VALUE NETWORK
         self.value = nn.Sequential(nn.Linear(value_dim, hidden_dim), 
-                                           nn.LeakyReLU(),
-                                           nn.Linear(hidden_dim, 1),
-                                           Exponential())
+                                   nn.LeakyReLU(),
+                                   nn.Linear(hidden_dim, 1),
+                                   Exponential())
         self.value_optimizer = torch.optim.Adam(self.value.parameters(), lr=1e-3)
     
-    # --- trading intensities / environment --- #
+# --- ENVIRONMENT / DYNAMICS --- #
     def lambda_buy(self, delta_a):
         k = self.alpha * self.K_b                                                                                                                                                                                                                                                      
         A = self.Lambda_b / self.alpha
@@ -121,9 +107,9 @@ class MarketMaker():
             # wealth += bought - sold
             state  = self.observe_state()
             # perform random LIMIT ORDERS
-            action = self.act(state, naive=2)
+            action = self.act(state)
 
-    # --- RL part --- #
+# --- STATES / ACTIONS --- #
     def observe_state(self):
         """ instead of midprice, delta_a, delta_b, can just use actual price of the 
         highest bid and lowest ask (dim=4) """
@@ -145,7 +131,7 @@ class MarketMaker():
             state = (self.book.nhigh_bid, self.book.high_bid, self.book.nlow_ask, self.book.low_ask)
         if len(state) == 5:  # use NN policy
             n_bid, bid_price, n_ask, ask_price, time_left = state
-            action = self.policy(torch.tensor(state)).item()
+            action = self.policy(np2torch(np.array(state))).detach().cpu().numpy()
         if len(state) == 4:  # default "naive" policy
             delta_b = self.book.delta_b; delta_a = self.book.delta_a
             n_bid, bid_price, n_ask, ask_price = state
@@ -167,6 +153,7 @@ class MarketMaker():
             n_bid = np.random.poisson(n_bid)
             n_ask = np.random.poisson(n_ask)
         self.limit_act(n_bid, bid_price, n_ask, ask_price)
+        return (n_bid, bid_price, n_ask, ask_price)
     
     def limit_act(self, n_bid, bid_price, n_ask, ask_price):
         """ Perform a limit order action, making (up to) 2 limit orders: a bid and ask
@@ -183,19 +170,21 @@ class MarketMaker():
         self.book.ask(n_ask, ask_price)
         return n_bid, bid_price, n_ask, ask_price
 
-    # --- REWARD FUNCTIONS --- #
+# --- REWARD FUNCTIONS --- #
     # objective with no inventory dynamics?
     def frozen_reward(self, initial_wealth, stock_val, nstocks, time_left):
         first = -np.exp(-self.gamma*(initial_wealth + nstocks*stock_val))
         second = np.exp((self.gamma*nstocks*self.sigma)**2 * time_left / 2)
         return first * second
 
-    def immediate_reward(reward_state, a=1, b=1):
+    def immediate_reward(self, r_state):
         """ immediate + discounted future reward """
-        dW, dI, time_left = reward_state
-        return a*dW + np.exp(-b*time_left) * np.sign(dI)
+        # dW, dI, time_left = reward_state
+        if isinstance(r_state, tuple):
+            r_state = np.array(r_state)
+        return self.a*r_state[...,0] + np.exp(-self.b*r_state[...,2]) * np.sign(r_state[...,1])
     
-    def final_reward(wealth, inventory, midprice):
+    def final_reward(self, wealth, inventory, midprice):
         return -np.exp(-(wealth + inventory*midprice))
 
     def reservation_price(self, midprice, inventory, t_left):  # reservation / indifference price
@@ -204,38 +193,37 @@ class MarketMaker():
     def optimal_spread(self, time_left):
         return self.gamma * self.sigma**2 * time_left + 2*np.log(1+2*self.gamma/(self.alpha*(self.K_b+self.K_a)))/self.gamma
     
-    def simulate(self, num = 1000, track_all=False, action=''):
+# --- SIMULATION --- #
+    def simulate(self, nbatch = 1000, track_all=False, action=''):
         """ naively iterate through order book to show evolution over time using current policy algorithm 
         Sample a batch of trajectories under some policy
         Inputs:
-        - num = number of trajectories to sample
+        - nbatch = number of trajectories to sample
         - track_all = keep track of wealth, inventory, midprices over time
         - action = 'naive' or 'avellaneda', or anything else
         Output: (trajectories, rewards)
-        - trajectories = (num x num_times x val_dim) nd.arary
-        - rewards = (num x num_times) nd.array
+        - trajectories = (nbatch x num_times x val_dim) nd.arary
+        - rewards = (nbatch x num_times) nd.array
         if track_all, output: (trajectories, rewards, wealth, inventory, midprices) """
         T = self.terminal_time; dt = self.dt
-        nt = T // dt
-        trajectories = np.empty((num, nt, self.val_dim))
-        rewards = np.empty((num, nt))
+        nt = int(T/dt)
+        trajectories = np.empty((nbatch, nt, self.val_dim))
+        rewards = np.empty((nbatch, nt))
         if track_all:  # track all for later plotting?
-            wealth = np.empty((num, nt))
-            inventory = np.empty((num, nt))
-            midprices = np.empty((num, nt))
-        with tqdm(total=num) as pbar:
+            wealth = np.empty((nbatch, nt))
+            inventory = np.empty((nbatch, nt),dtype=int)
+            midprices = np.empty((nbatch, nt))
+        with tqdm(total=nbatch) as pbar:
             pbar.set_description("Creating Batch...")
-            for b in range(num):
+            for b in range(nbatch):
                 self.initialize_book()
-                reward_states = []
-                W = self.W
-                I = self.I
+                W = self.W; I = self.I
                 if track_all:
                     wealth[b, 0] = self.W
                     inventory[b, 0] = self.I
                     midprices[b, 0] = self.book.midprice
                 for t in range(nt):
-                    time_left = (self.teminal_time - t*self.dt,)
+                    time_left = (self.terminal_time - t*self.dt,)
                     state = self.observe_state()
                     # AVELLANEDA ACTION
                     if action == 'avellaneda':
@@ -254,143 +242,120 @@ class MarketMaker():
                     #TODO: do we want to reward based on intermediate actual 
                     # wealth, inventory instead of just dW, dI???
                     reward_state = (dW, dI) + time_left
-                    reward_states.append(reward_state)
+                    rewards[b, t] = self.immediate_reward(reward_state)
                     trajectories[b, t] = state + action + reward_state
                 # --- GET REWARDS from reward_state --- #
-                rewards[b, -1] = self.final_reward(wealth[b, -1], inventory[b, -1], midprices[b, -1])
-                for i in range(nt-2, -1, -1):
-                    rewards[b, i] = self.immediate_reward(reward_states[i]) + mm.gamma*rewards[b, i+1]
+                rewards[b, t] = self.final_reward(wealth[b, -1], inventory[b, -1], midprices[b, -1])
                 pbar.update(1)
                 pbar.set_postfix_str(f"Reward {rewards[b, -1]}", refresh=True)
         if track_all:
             return trajectories, rewards, wealth, inventory, midprices
         return trajectories, rewards
+
+    def get_returns(self, rewards):
+        """ Compute returns from batched rewards and batched trajectories using discounted sum
+        Inputs:
+            - rewards (nbatch x nt) np.ndarray
+            - trajectories (nbatch x nt x val_dim) np.ndarray """
+        if isinstance(rewards, np.ndarray):
+            returns = np.empty_like(rewards)
+        else:
+            returns = torch.empty_like(rewards)
+        nt = rewards.shape[1]
+        for t in range(nt-2, -1, -1):
+            returns[:, t] = rewards[:, t] + self.gamma*rewards[:, t+1]
+        return returns
     
     def plot(self, wealth, inventory, midprices, title=''):
-        """ plot hshit """
+        """ plot stuff 
+        Inputs: (nbatch x nt) np.ndarrays """
         times = np.arange(0, self.terminal_time, self.dt)
         fig, axs = plt.subplots(3,1, figsize=(10,8))
-        for i, y, name in zip((0,1,2),[wealth, inventory, midprices],'Wealth', 'Inventory', 'Midprice'):
+        for i, y, name in zip((0,1,2),(wealth, inventory, midprices),('Wealth', 'Inventory', 'Midprice')):
             ax = axs[i]
-            ax.plot(times, y)
             ax.set(xlabel="Time")
             ys = np.mean(y, axis=0)
             yerrs = stats.sem(y, axis=0)
-            ax.fill_between(times, ys - yerrs, ys + yerrs, alpha=0.25)
-            ax.plot(times, ys, label=name)
+            ax.fill_between(times, ys - yerrs, ys + yerrs, alpha=0.25, cmap=f"C{i}")
+            ax.plot(times, ys, label=name, cmap=f"C{i}")
         axs[2].set(xlabel="Time")
-        axs[0].plot(wealth + inventory*midprices,label='Total Value')
+        i += 1
+        y = wealth + inventory*midprices
+        ys = np.mean(y, axis=0); yerrs = stats.sem(y, axis=0)
+        axs[0].fill_between(times, ys - yerrs, ys + yerrs, alpha=0.25, cmap=f"C{i}")
+        axs[0].plot(times, ys, label='Total Value', cmap=f"C{i}")
         axs[0].legend()
         if title: plt.title(title)
         plt.show()
-    
-    def get_advantages(self, rewards, trajectories):
-        """ Compute advantages from rewards and trajectories 
-        - 1. run value network on trajecotires """
-        advantages = np.zeros_like(rewards)
-        advantage = 0
-        for t in reversed(range(len(rewards))):
-            advantage = rewards[t] + self.gamma * advantage
-            advantages[t] = advantage
-        return advantages
 
+# --- TRAINING --- #
+    def get_advantages(self, trajectories, returns):
+        """ Compute advantages from batched rewards and batched trajectories 
+        - returns (nbatch x nt) np.ndarray
+        - trajectories (nbatch x nt x val_dim) np.ndarray
+        - run value network on trajectories to get value estimates """
+        advantages = returns - self.value(trajectories).squeeze().detach().cpu().numpy()
+        return (advantages - advantages.mean()) / (advantages.std())
 
-    def train_value(self):
-        # -- TRAIN REWARD FUNCTION -- #
-        new_val  = np2torch(reward)
-        pred_val = self.value(value_state)
-        loss = -torch.mean((new_val - pred_val)**2)
+    def update_value(self, trajectories, returns):
+        """ use MSE loss to train value function 
+        Inputs: returns (nbatch x nt) np.ndarray, trajectories (nbatch x nt x val_dim) np.ndarray """
+        act_val  = np2torch(returns)
+        pred_val = self.value(np2torch(trajectories)).squeeze()
+        loss = torch.mean((act_val - pred_val)**2)
         self.value_optimizer.zero_grad()
         loss.backward()
         self.value_optimizer.step()
 
+    def update_policy(self, trajectories, advantages):
+        """ use MSE loss to train policy function """
+        trajectories = np2torch(trajectories)
+        advantages = np2torch(advantages)
+        states = torch.cat((trajectories[...,:self.obs_dim], trajectories[...,-1]), dim=-1)
+        actions = self.policy(states)
+        loss = -torch.mean(advantages * torch.log(actions))
+        self.policy_optimizer.zero_grad()
+        loss.backward()
+        self.policy_optimizer.step()
 
 # ---- MONTE CARLO TRAIN THIS ---- #
 
 # tuple of time, wealth_diff, inventory_diff, midprice_diff
 # from https://discovery.ucl.ac.uk/id/eprint/10116730/1/RLforHFMM.pdf 
 
-
-# b = gamma in Trainer class?
-
-def train_market():
+def train_market(num_epochs = 100, batch_size = 100, timesteps = 1000):
     """ Monte-Carlo Ish Thing """
     obs_dim = act_dim = 4
     rew_dim = 3
-    # for value function, we need 
-    # (observation, action, time_left, and (wealth, inventory, midprice) at final time)
-    # as we are using MC value function
     value_dim = obs_dim + act_dim + rew_dim
 
     # initialize parameters
     dt = 0.005
-    nt = 10000  # define horizon
-    terminal_time = nt*dt  # will never exactly reach this in for loop
+    nt = timesteps  
+    terminal_time = nt*dt
     times = np.arange(0, terminal_time, dt)
+
     mm = MarketMaker(0, 0, dt=dt, gamma=1, sigma=1, terminal_time=terminal_time)
 
     #trajectores[:obs_dim], [obs_dim:act_dim], [act_dim:] for observations, actions, values
-    trajectories, rewards, wealth, inventory, midprice = mm.simulate(mm, batch_size = 1000, track_all=True)
-    mm.plot(wealth, inventory, midprice, title='1000 batches')
-    # (batch_size x nt x value_dim), (batch_size x nt)
-    # initialize policy function in self.policy and value in self.value
-    mm.initialize_networks(value_dim=value_dim)
-    # backpropagate through trajectory to define reward from t?
-    loss = -(rewards - mm.value(trajectories)).mean()
-    for i in range(len(trajectory)):
-        state, action, reward = trajectory[i]
-        value_state = state + action + (final_time - i*dt, (tot_wealth, tot_inventory, mm.book.midprice))
-        new_val = immediate_reward(reward)
-        pred_val = mm.value(value_state)
-        loss = -(new_val - pred_val)
-        mm.value_optimizer.zero_grad()
-        loss.backward()
-        mm.value_optimizer.step()
+    with tqdm(total=num_epochs) as pbar:
+        pbar.set_description("Training Market Maker...")
+        for epoch in range(num_epochs):
+            mm.initialize_networks(value_dim=value_dim)
+            trajectories, rewards, wealth, inventory, midprice = mm.simulate(nbatch = batch_size, track_all=True)
+            mm.plot(wealth, inventory, midprice, title=f'{batch_size} batches')
+            returns = mm.get_returns(rewards)
+            advantages = mm.get_advantages(trajectories, returns)
+            mm.update_value(trajectories, returns)
+            mm.update_policy(trajectories, advantages)
+            pbar.update(1)
+            pbar.set_postfix_str(f"Reward {rewards[:,-1].mean()}", refresh=True)
 
-        # update policy
-        advantage = advantages[i] - mm.value(trajectory)
-        normalized_advantage = (advantage - np.mean(advantage))/(np.std(advantage)+1e-10)
-        # compute discounted advantage using discounted returns?
-        # backstep
-        mm.policy_optimizer.zero_grad()
-        loss.backward()
-        mm.policy_optimizer.step()
-    # use advantage function to debias 
-    advantage = trajectory_return - mm.value(trajectory)
-    normalized_advantage = (advantage - np.mean(advantage))/(np.std(advantage)+1e-10)
-    # compute discounted advantage using discounted returns?
-    # backstep
-    
-
-    # update progress bar every episode
-    pbar.update(1)
-    pbar.set_description("text", refresh=True)
-    pbar.set_postfix_str(f"Reward {trajectory_return}")
-
-    discount = 0.99
-            
-            # --- UPDATE POLICY AND VALUE FUNCTIONS --- #
-
-
-
-
-        
-        
-
-        
-
-        
-
-
-
-
-
-
-
-
-
-
+parser = argparse.ArgumentParser()
+parser.add_argument("-ne", "-n_epochs", dest='ne', type=int, default=100)
+parser.add_argument("-nb", "-n_batches", dest='nb', type=int, default=100)
+parser.add_argument("-nt", "-n_times", dest='nt', type=int, default=10000)
 
 if __name__ == "__main__":
-    mm = MarketMaker(0, 0)
-    mm.step()
+    args = parser.parse_args()
+    train_market(args.ne, args.nb, args.nt)

@@ -41,7 +41,7 @@ def build_mlp(input_size, output_size, n_layers, hidden_size, activation=nn.ReLU
         layers.append(nn.Linear(hidden_size,hidden_size))
         layers.append(activation)
     layers.append(nn.Linear(hidden_size, output_size))
-    return nn.Sequential(*layers)
+    return nn.Sequential(*layers).to(device)
 
 """ Used for exponential value functions """
 class Exponential(torch.nn.Module):

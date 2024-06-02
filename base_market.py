@@ -75,6 +75,7 @@ class MarketMaker():
         dW = dI = 0
         for step in range(nsteps):
             delta_b = self.book.delta_b; delta_a = self.book.delta_a
+            print("delta_a:", delta_a, "delta_b:", delta_b, "midprice:", self.book.midprice)
             nbuy  = np.random.poisson(self.lambda_buy(delta_a))
             nsell = np.random.poisson(self.lambda_sell(delta_b))
             n_ask_lift, bought = self.book.buy(nbuy)
@@ -85,7 +86,7 @@ class MarketMaker():
     def initialize_book(self, mid=100, spread=10, nstocks=100, nsteps=100, substeps=1):
         """ Randomly initialize order book """
         if self.book: del(self.book)
-        self.book = OrderBook()
+        self.book = OrderBook(mid)
         self.book.bid(nstocks//2, mid-spread/2)
         self.book.ask(nstocks//2, mid+spread/2)
         self.midprice = mid
@@ -116,9 +117,12 @@ class MarketMaker():
             if len(state) < 3: raise TypeError
         except TypeError:  # resample state
             state = (self.book.nhigh_bid, self.book.high_bid, self.book.nlow_ask, self.book.low_ask)
+        
         if len(state) == 5:  # use NN policy
             n_bid, bid_price, n_ask, ask_price, time_left = state
-            action = self.policy(np2torch(np.array(state))).detach().cpu().numpy()
+            state_tensor = np2torch(np.array(state))
+            action = self.policy(state_tensor)
+        
         if len(state) == 4:  # default "naive" policy
             delta_b = self.book.delta_b; delta_a = self.book.delta_a
             n_bid, bid_price, n_ask, ask_price = state
@@ -127,6 +131,7 @@ class MarketMaker():
             n_bid = np.random.poisson(n_bid/2)
             n_ask = np.random.poisson(n_ask/2) 
             action = (n_bid, bid_price, n_ask, ask_price)
+
         if len(state) == 3:  # avellaneda policy
             wealth, inventory, time_left = state
             n_bid = n_ask = 1  #TODO i think...
@@ -139,6 +144,7 @@ class MarketMaker():
             ask_price = res_price + optimal_spread / 2
             n_bid = np.random.poisson(n_bid)
             n_ask = np.random.poisson(n_ask)
+
         self.limit_act(n_bid, bid_price, n_ask, ask_price)
         return (n_bid, bid_price, n_ask, ask_price)
     
@@ -367,9 +373,9 @@ def train_market(num_epochs = 100, batch_size = 1000, timesteps = 5000, plot_aft
     mm.save(num_epochs, batch_size, timesteps)
 
 parser = argparse.ArgumentParser()
-parser.add_argument("-ne", "-n_epochs", dest='ne', type=int, default=100)
-parser.add_argument("-nb", "-n_batches", dest='nb', type=int, default=1000)
-parser.add_argument("-nt", "-n_times", dest='nt', type=int, default=10000)
+parser.add_argument("-ne", "-n_epochs", dest='ne', type=int, default=10)
+parser.add_argument("-nb", "-n_batches", dest='nb', type=int, default=100)
+parser.add_argument("-nt", "-n_times", dest='nt', type=int, default=1000)
 parser.add_argument("-test_initialization", dest='testinitial', default=False, action='store_true')
 parser.add_argument("-l", "--load", nargs='+', default=[])
 
@@ -381,6 +387,7 @@ if __name__ == "__main__":
             load.append(args.load[3])
         nb = load[1]  
         nt = load[2]
+        print(nt)
         dt = 0.001
         mm = MarketMaker(0, 0, dt=dt, terminal_time=nt*dt)
         mm.load(*load)

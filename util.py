@@ -13,8 +13,10 @@ import matplotlib.ticker as mtick
 import sys, time, os
 from scipy.optimize import curve_fit
 from tqdm import tqdm
-import torch.nn as nn
 import torch
+import torch.nn as nn
+import logging
+from scipy import stats
 
 # blue = bids, red = asks
 #           |   Blue  |   Red  |  Orange |  Purple | Yellow  |   Green |   Teal  | Grey
@@ -28,10 +30,9 @@ np.set_printoptions(precision=4)
 
 
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-def np2torch(x, cast_double_to_float=True):
+def np2torch(x):
     x = torch.from_numpy(x).to(device)
-    if cast_double_to_float and x.dtype is torch.float64:
-        x = x.float()
+    if x.dtype is torch.float64: x = x.float()  # cast double to float
     return x
 
 def build_mlp(input_size, output_size, n_layers, hidden_size, activation=nn.ReLU()):
@@ -41,7 +42,58 @@ def build_mlp(input_size, output_size, n_layers, hidden_size, activation=nn.ReLU
         layers.append(nn.Linear(hidden_size,hidden_size))
         layers.append(activation)
     layers.append(nn.Linear(hidden_size, output_size))
-    return nn.Sequential(*layers)
+    return nn.Sequential(*layers).to(device)
+
+def get_logger(filename):
+    """ Return a logger instance to a file """
+    logger = logging.getLogger("logger")
+    logger.setLevel(logging.DEBUG)
+    logging.basicConfig(format="%(message)s", level=logging.DEBUG)
+    handler = logging.FileHandler(filename)
+    handler.setLevel(logging.DEBUG)
+    handler.setFormatter(logging.Formatter("%(asctime)s:%(levelname)s: %(message)s"))
+    logging.getLogger().addHandler(handler)
+    return logger
+
+def normalize(x):
+    """ Normalize np.ndarray or torch.Tensor """
+    return (x - x.mean()) / (x.std() + 1e-10)
+
+def plot_WIM(self, wealth: np.ndarray, inventory: np.ndarray, midprices: np.ndarray, dt: float, title=''):
+    """ plot data from a batch of trajectories
+    Inputs: (nbatch x nt) np.ndarrays """
+    times = np.arange(0, wealth.shape[-1]*dt, dt)
+    fig, axs = plt.subplots(3,1, figsize=(10,8))
+    for i, y, name in zip((0,1,2),(wealth, inventory, midprices),('Wealth', 'Inventory', 'Midprice')):
+        ax = axs[i]
+        ax.set(ylabel=name)
+        ys = np.mean(y, axis=0)
+        yerrs = stats.sem(y, axis=0)
+        ax.fill_between(times, ys - yerrs, ys + yerrs, alpha=0.25, color=f"C{i}")
+        ax.plot(times, ys, color=f"C{i}")
+    axs[2].set(xlabel="Time")
+    i += 1
+    y = wealth + inventory*midprices
+    ys = np.mean(y, axis=0); yerrs = stats.sem(y, axis=0)
+    axs[0].fill_between(times, ys - yerrs, ys + yerrs, alpha=0.25, color=f"C{i}")
+    axs[0].plot(times, ys, label='Total Value', color=f"C{i}")
+    axs[0].legend()
+    if title: axs[0].set_title(title)
+    plt.show()
+
+def export_plot(y, ylabel, title, filename):
+    """ yuh. """
+    fig, ax = plt.subplots(figsize=(10,8))
+    plt.plot(range(len(ys)), ys)
+    times = np.arange(0, len(ys))
+    ys = np.mean(y, axis=0)
+    yerrs = stats.sem(y, axis=0)
+    ax.fill_between(times, ys - yerrs, ys + yerrs, alpha=0.25)
+    ax.plot(times, ys)
+    ax.set(xlabel='Training Episode',ylabel=ylabel)
+    ax.set_title(title)
+    fig.savefig(filename)
+    plt.show()
 
 """ Used for exponential value functions """
 class Exponential(torch.nn.Module):

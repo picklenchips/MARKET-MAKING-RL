@@ -23,3 +23,6 @@ if __name__ == "__main__":
     # train model
     model = PolicyGradient(env, config, args.seed) if not args.ppo else PPO(env, config, args.seed)
     model.run()
+    config = Config()
+    mm = MarketMaker(config)
+    print("MarketMaker initialized successfully!")

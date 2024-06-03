@@ -182,7 +182,6 @@ if __name__ == "__main__":
         sell_orders = (np.random.normal(size=(N,))*std_sell + mean_sell).astype(int)
 
         book = OrderBook()
-
         # alternate buy, sell orders
         for i in range(N):
             n = np.random.randint(1,10)

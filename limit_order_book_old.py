@@ -15,7 +15,7 @@ class OrderBook():
       - lowest ask tracked as (self.low_ask, self.nlow_ask)
     also stroes self.midprice, self.spread, self.delta_b, self.delta_a
     """
-    def __init__(self):
+    def __init__(self, throwaway=None):
         # keep track of limit orders
         self.bids = []
         self.asks = []

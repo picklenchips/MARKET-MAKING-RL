@@ -16,7 +16,7 @@ class OrderBook():
       - lowest ask tracked as (self.low_ask, self.nlow_ask)
     also stroes self.midprice, self.spread, self.delta_b, self.delta_a
     """
-    def __init__(self, baseline=100):
+    def __init__(self, baseline=533):
         # keep track of limit orders
         self.bids = []
         self.asks = []
@@ -26,8 +26,8 @@ class OrderBook():
         self.delta_a  = 0
 
         # BROWNIAN MIDPRICE
-        self.drift = 0  # 0.5677
-        self.scale = .08685
+        self.drift = 3.59e-6  # 0.5677
+        self.scale = 2.4e-3
         self.max_t = 1
         self.baseline = baseline  # 533?
         self.midprice = self.baseline

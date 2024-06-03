@@ -5,7 +5,7 @@ import torch.nn as nn
 import torch.optim as optim
 import torch.nn.functional as F
 
-from util import np2torch
+from util import np2torch, device
 from base_market import MarketMaker
 
 """ use a stochastic policy and run PPO """
@@ -21,7 +21,7 @@ class PPO(MarketMaker):
         self.value_coef = value_coef
         self.entropy_coef = entropy_coef
         
-        self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+        self.device = device
         
         self.actor = self.build_actor()
         self.critic = self.build_critic()

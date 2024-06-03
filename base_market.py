@@ -1,5 +1,5 @@
 from limit_order_book import OrderBook
-from util import uFormat, mpl, plt, np, np2torch, build_mlp
+from util import uFormat, mpl, plt, np, np2torch, build_mlp, SAVEDIR
 import torch
 import torch.nn as nn
 from tqdm import tqdm
@@ -75,7 +75,7 @@ class MarketMaker():
         dW = dI = 0
         for step in range(nsteps):
             delta_b = self.book.delta_b; delta_a = self.book.delta_a
-            print("delta_a:", delta_a, "delta_b:", delta_b, "midprice:", self.book.midprice)
+            # print("delta_a:", delta_a, "delta_b:", delta_b, "midprice:", self.book.midprice)
             nbuy  = np.random.poisson(self.lambda_buy(delta_a))
             nsell = np.random.poisson(self.lambda_sell(delta_b))
             n_ask_lift, bought = self.book.buy(nbuy)
@@ -83,7 +83,7 @@ class MarketMaker():
             dW += bought - sold; dI += n_bid_hit - n_ask_lift
         return dW, dI
 
-    def initialize_book(self, mid=100, spread=10, nstocks=100, nsteps=100, substeps=1):
+    def initialize_book(self, mid=533, spread=10, nstocks=100, nsteps=100, substeps=1):
         """ Randomly initialize order book """
         if self.book: del(self.book)
         self.book = OrderBook(mid)
@@ -281,6 +281,7 @@ class MarketMaker():
         axs[0].plot(times, ys, label='Total Value', color=f"C{i}")
         axs[0].legend()
         if title: axs[0].set_title(title)
+        plt.savefig(os.path.join(SAVEDIR, "model.png"))
         plt.show()
 
 # --- TRAINING --- #
@@ -375,7 +376,7 @@ def train_market(num_epochs = 100, batch_size = 1000, timesteps = 5000, plot_aft
 parser = argparse.ArgumentParser()
 parser.add_argument("-ne", "-n_epochs", dest='ne', type=int, default=10)
 parser.add_argument("-nb", "-n_batches", dest='nb', type=int, default=100)
-parser.add_argument("-nt", "-n_times", dest='nt', type=int, default=1000)
+parser.add_argument("-nt", "-n_times", dest='nt', type=int, default=100)
 parser.add_argument("-test_initialization", dest='testinitial', default=False, action='store_true')
 parser.add_argument("-l", "--load", nargs='+', default=[])
 
@@ -387,7 +388,6 @@ if __name__ == "__main__":
             load.append(args.load[3])
         nb = load[1]  
         nt = load[2]
-        print(nt)
         dt = 0.001
         mm = MarketMaker(0, 0, dt=dt, terminal_time=nt*dt)
         mm.load(*load)

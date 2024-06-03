@@ -39,8 +39,8 @@ class Market():
         self.book.ask(nstocks//2, mid+spread/2)
         for t in range(nsteps):
             # perform random MARKET ORDERS
-            dW, dI = self.step(substeps)
-            state  = self.observe_state()
+            dW, dI, mid = self.step(substeps)
+            state  = self.state()
             # perform random LIMIT ORDERS using naive action
             self.act(state)
     
@@ -98,7 +98,7 @@ class Market():
             n_bid = np.random.poisson(n_bid/2)
             n_ask = np.random.poisson(n_ask/2) 
             action = (n_bid, bid_price, n_ask, ask_price)
-        if len(state) == 3:  # avellaneda policy
+        elif len(state) == 3:  # avellaneda policy
             wealth, inventory, time_left = state
             n_bid = n_ask = 1  #TODO i think...
             # greedily try to set midprice to be reservation price

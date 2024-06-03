@@ -48,18 +48,18 @@ def get_logger(filename):
     """ Return a logger instance to a file """
     logger = logging.getLogger("logger")
     logger.setLevel(logging.DEBUG)
-    logging.basicConfig(format="%(message)s", level=logging.DEBUG)
+    logging.basicConfig(filename=filename, format="%(message)s", level=logging.DEBUG)
     handler = logging.FileHandler(filename)
     handler.setLevel(logging.DEBUG)
     handler.setFormatter(logging.Formatter("%(asctime)s:%(levelname)s: %(message)s"))
-    logging.getLogger().addHandler(handler)
+    logger.addHandler(handler)
     return logger
 
 def normalize(x):
     """ Normalize np.ndarray or torch.Tensor """
     return (x - x.mean()) / (x.std() + 1e-10)
 
-def plot_WIM(self, wealth: np.ndarray, inventory: np.ndarray, midprices: np.ndarray, dt: float, title=''):
+def plot_WIM(wealth: np.ndarray, inventory: np.ndarray, midprices: np.ndarray, dt: float, title='', savename=''):
     """ plot data from a batch of trajectories
     Inputs: (nbatch x nt) np.ndarrays """
     times = np.arange(0, wealth.shape[-1]*dt, dt)
@@ -79,15 +79,15 @@ def plot_WIM(self, wealth: np.ndarray, inventory: np.ndarray, midprices: np.ndar
     axs[0].plot(times, ys, label='Total Value', color=f"C{i}")
     axs[0].legend()
     if title: axs[0].set_title(title)
+    if savename: plt.savefig(savename)
     plt.show()
 
 def export_plot(y, ylabel, title, filename):
-    """ yuh. """
+    """ plot epochs. """
     fig, ax = plt.subplots(figsize=(10,8))
-    plt.plot(range(len(ys)), ys)
-    times = np.arange(0, len(ys))
-    ys = np.mean(y, axis=0)
-    yerrs = stats.sem(y, axis=0)
+    times = np.arange(0, y.shape[0])
+    ys = np.mean(y, axis=1)
+    yerrs = stats.sem(y, axis=1)
     ax.fill_between(times, ys - yerrs, ys + yerrs, alpha=0.25)
     ax.plot(times, ys)
     ax.set(xlabel='Training Episode',ylabel=ylabel)
@@ -108,9 +108,10 @@ class Exponential(torch.nn.Module):
     def string(self):
         return f'y = -{abs(self.a.item())} * exp(-{abs(self.b.item())} x)'
 
-# --- robust number formatting to sig_figs
+
 def uFormat(number, uncertainty, round = 0, sig_figs = 4, FormatDecimals = False):
     """
+    V 3.0
     Returns "num_rounded(with_sgnfcnt_dgts_ofuncrtnty)", formatted to 10^round
     According to section 5.3 of "https://pdg.lbl.gov/2011/reviews/rpp2011-rev-rpp-intro.pdf"
 
@@ -126,11 +127,8 @@ def uFormat(number, uncertainty, round = 0, sig_figs = 4, FormatDecimals = False
     - bool FormatDecimals:  for a number 0.00X < 1e-2, option to express in "X.XXe-D" format
              for conciseness. doesnt work in math mode because '-' is taken as minus sign
     """
-    if isinstance(number,str):
-        if number == "None": return ""
-    if isinstance(uncertainty,str):
-        if uncertainty == "None": uncertainty = 0
     num = str(number); err = str(uncertainty)
+    
     sigFigsMode = not uncertainty    # UNCERTAINTY ZERO: IN SIG FIGS MODE
     if sigFigsMode and not sig_figs: # nothing to format
         return num
@@ -149,8 +147,6 @@ def uFormat(number, uncertainty, round = 0, sig_figs = 4, FormatDecimals = False
     if 'e' in num:
         ff = num.split('e')
         num = ff[0]
-        if not len(ff[1]):  # handles num="None"
-            return ''
         ni = -int(ff[1])
     if 'e' in err:
         ff = err.split('e')
@@ -158,7 +154,7 @@ def uFormat(number, uncertainty, round = 0, sig_figs = 4, FormatDecimals = False
         ei = -int(ff[1])
 
     if not num[0].isdigit():
-        print("uFormat: {num} isn't a number")
+        print(f"uFormat: {num} isn't a number")
         return num
     if not err[0].isdigit():
         err = '?'
@@ -207,7 +203,7 @@ def uFormat(number, uncertainty, round = 0, sig_figs = 4, FormatDecimals = False
         elif nTop > 949: # 950 -> (10..)
             Err = 10
             ei -= 2
-        else: # 355 -> (4..)
+        else:  # 355 -> (4..)
             Err = int(topThree[0])
             if int(topThree[1]) >= 5:
                 Err += 1
@@ -266,65 +262,3 @@ def uFormat(number, uncertainty, round = 0, sig_figs = 4, FormatDecimals = False
     if not sigFigsMode:
         end = '(' + Err + ')' + end
     return Num + end
-
-# wrapper printing time a function runs in, use @timeIt before function def
-def timeIt(func):
-    """@ timeIt: Wrapper to print run time of a function."""
-    def wrapper(*args, **kwargs):
-        start_time = time.clock_gettime_ns(0)
-        res = func(*args, **kwargs)
-        end_time = time.clock_gettime_ns(0)
-        diff = (end_time - start_time) * 10**(-9)
-        print(func.__name__, 'ran in %.6fs' % diff)
-        return res
-    return wrapper
-
-# search for first instance of X_val in array X
-def binarySearch(X_val, X, decreasing=False):
-    """
-    For sorted X, returns i such that X[:i] < X_val, X[i:] >= X_val
-     - if decreasing, returns i such that    X[:i] > X_val, X[i:] <= X_val
-    """
-    l = 0; r = len(X) - 1
-    #print(f"searching for {X_val}, negative={negative}")
-    m = (l + r) // 2
-    while r > l:  # common binary search
-        #print(f"{l}:{r} is {X[l:r+1]}, middle {X[m]}")
-        if X[m] == X_val:  # repeat elements of X_val in array
-            break
-        if decreasing: # left is always larger than right
-            if X[m] > X_val:
-                l = m + 1
-            else:
-                r = m - 1
-        else:        # right is always larger than left
-            if X[m] < X_val:
-                l = m + 1
-            else:
-                r = m - 1
-        m = (l + r) // 2
-    if r < l:
-        return l
-    if m + 1 < len(X):  # make sure we are always on right side of X_val
-        if X[m] < X_val and not decreasing:
-            return m + 1
-        if X[m] > X_val and decreasing:
-            return m + 1
-    if X[m] == X_val:  # repeat elements of X_val in array
-        if decreasing:
-            while m > 0 and X[m - 1] == X_val:
-                m -= 1
-        elif not decreasing:
-            while m + 1 < len(X) and X[m + 1] == X_val:
-                m += 1
-    return m
-
-# linear interpolate 1D with sorted X
-def linearInterpolate(x,X,Y):
-    """example: 2D linear interpolate by adding interpolations from both
-    - """
-    i = binarySearch(x,X)
-    if i == 0: i += 1  # lowest ting, interpolate backwards
-    m = (Y[i]-Y[i-1])/(X[i]-X[i-1])
-    b = Y[i] - m*X[i]
-    return m*x + b

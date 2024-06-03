@@ -1,28 +1,41 @@
-import torch, numpy as np, argparse
+from marketmaker import MarketMaker
+import argparse
+from config import Config, get_config
+import numpy as np
+import torch
 
 parser = argparse.ArgumentParser()
-parser.add_argument(
-    "--env-name", required=True, type=str, choices=["cartpole", "pendulum", "cheetah"]
-)
-parser.add_argument("--baseline", dest="use_baseline", action="store_true")
-parser.add_argument("--no-baseline", dest="use_baseline", action="store_false")
-parser.add_argument("--ppo", dest="ppo", action="store_true")
-parser.add_argument("--seed", type=int, default=1)
-
-parser.set_defaults(use_baseline=True)
-
+parser.add_argument("-p", "--policy", default='ppo')
+parser.add_argument("-ne", "--ne", type=int)
+parser.add_argument("-nb", "--nb", type=int)
+parser.add_argument("-nt", "--nt", type=int)
+parser.add_argument("-l", "--load", help='load a model from a filepath/name')
+parser.add_argument("--seed", default=0, type=int)
+# TD LAMBDA STUFF?
+parser.add_argument("--td", action='store_true')
 
 if __name__ == "__main__":
     args = parser.parse_args()
-
     torch.random.manual_seed(args.seed)
     np.random.seed(args.seed)
+
+    config = False
+    if args.load:
+        config = get_config(args.load)
+    if not config:  # DEFAULT CONFIG
+        if args.td: 
+            config = Config(trajectory='TD')
+        else:
+            config = Config()
     
-    #TODO: once models are complete do this shiiit
-    
-    # train model
-    model = PolicyGradient(env, config, args.seed) if not args.ppo else PPO(env, config, args.seed)
-    model.run()
-    config = Config()
-    mm = MarketMaker(config)
-    print("MarketMaker initialized successfully!")
+    # if we add other policies LOL
+    policy = args.policy.lower()
+    if policy != 'ppo': 
+        print('as if we have implemented another policy...')
+        pass
+    if args.nb: config.nb = args.nb
+    if args.nt: config.nt = args.nt
+    if args.ne: config.ne = args.ne
+
+    MM = MarketMaker(config)
+    MM.train()

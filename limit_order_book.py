@@ -1,6 +1,7 @@
 from util import uFormat, mpl, plt, np
 from util import FIGSIZE, SAVEDIR, SAVEEXT
 import heapq  # priority queue
+from stochastic.processes.continuous.brownian_motion import BrownianMotion
 
 class OrderBook():
     """
@@ -13,9 +14,9 @@ class OrderBook():
     - ask: create a limit order to sell # stocks at some price 
       - stored self.asks as (price, #)
       - lowest ask tracked as (self.low_ask, self.nlow_ask)
-    also stroes self.midprice, self.spread, self.delta_b, self.delta_a
+    also stores an evolving self.midprice self.midprice, self.spread, self.delta_b, self.delta_a
     """
-    def __init__(self):
+    def __init__(self, baseline=100):
         # keep track of limit orders
         self.bids = []
         self.asks = []
@@ -24,7 +25,20 @@ class OrderBook():
         self.spread   = 0
         self.delta_b  = 0
         self.delta_a  = 0
+
+        # BROWNIAN MIDPRICE
+        self.drift = 3.59e-6
+        self.scale = .08685
+        self.max_t = 1
+        self.baseline = baseline
+        self.midprice = self.baseline
+        self.model = BrownianMotion(drift=self.drift, scale=self.scale, t=self.max_t)
     
+    def update_midprice(self):
+        """ Update midprice of market """
+        self.midprice += self.model._sample_brownian_motion(1)[1]
+        self.recalculate()
+
     def recalculate(self):
         """ Recalculate self.midprice and self.spread """
         self.spread = self.midprice = 0
@@ -36,7 +50,8 @@ class OrderBook():
             self.nlow_ask = self.asks[0][1]
             if len(self.bids):
                 self.high_bid = -self.bids[0][0]; self.nhigh_bid = self.bids[0][1]
-                self.midprice = (self.low_ask + self.high_bid)/2
+                # symmetric midprice
+                # self.midprice = (self.low_ask + self.high_bid)/2
                 self.spread = self.low_ask - self.high_bid
                 self.delta_b = self.midprice - self.high_bid
                 self.delta_a = self.low_ask - self.midprice

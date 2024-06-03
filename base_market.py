@@ -20,6 +20,7 @@ class MarketMaker():
                  discount=0.99):
         self.I = inventory
         self.W = wealth
+        # update book later using self.init_book()
         self.book = OrderBook()
         # --- market order parameters --- #
         # assume environment only does market orders
@@ -39,6 +40,20 @@ class MarketMaker():
         self.a = 1  # how much we weigh dW
         self.b = 1  # how much we weigh dI
         self.discount = discount
+
+    def initialize_book(self, mid=100, spread=10, nstocks=100, nsteps=100, substeps=1):
+        """ Randomly initialize order book """
+        if self.book: del(self.book)
+        self.book = OrderBook(mid)
+        # start with symmetric spread
+        self.book.bid(nstocks//2, mid-spread/2)
+        self.book.ask(nstocks//2, mid+spread/2)
+        for t in range(nsteps):
+            # perform random MARKET ORDERS
+            dW, dI = self.market_step(substeps)
+            state  = self.observe_state()
+            # perform random LIMIT ORDERS
+            self.act(state)
     
     def initialize_networks(self, obs_dim=5, act_dim=4, value_dim=11, hidden_dim=10, lr=1e-3):
         """ set policy and value networks 
@@ -74,6 +89,7 @@ class MarketMaker():
         - returns change in wealth, inventory (dW, dI) """
         dW = dI = 0
         for step in range(nsteps):
+            self.book.update_midprice()  # STEP MIDPRICE
             delta_b = self.book.delta_b; delta_a = self.book.delta_a
             nbuy  = np.random.poisson(self.lambda_buy(delta_a))
             nsell = np.random.poisson(self.lambda_sell(delta_b))
@@ -81,20 +97,6 @@ class MarketMaker():
             n_bid_hit, sold = self.book.sell(nsell)
             dW += bought - sold; dI += n_bid_hit - n_ask_lift
         return dW, dI
-
-    def initialize_book(self, mid=100, spread=10, nstocks=100, nsteps=100, substeps=1):
-        """ Randomly initialize order book """
-        if self.book: del(self.book)
-        self.book = OrderBook()
-        self.book.bid(nstocks//2, mid-spread/2)
-        self.book.ask(nstocks//2, mid+spread/2)
-        self.midprice = mid
-        for t in range(nsteps):
-            # perform random MARKET ORDERS
-            dW, dI = self.market_step(substeps)
-            state  = self.observe_state()
-            # perform random LIMIT ORDERS
-            self.act(state)
 
 # --- STATES / ACTIONS --- #
     def observe_state(self):

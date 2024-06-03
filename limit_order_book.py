@@ -52,16 +52,16 @@ class OrderBook():
                 self.high_bid = -self.bids[0][0]; self.nhigh_bid = self.bids[0][1]
                 # symmetric midprice
                 # self.midprice = (self.low_ask + self.high_bid)/2
-# MAKE SURE DELTA_A AND DELTA_B ARE CORRECT RELATIVE TO MIDPRICE
+# MAKE SURE DELTA_A AND DELTA_B ARE POSITIVE
                 while self.high_bid > self.midprice:
                     price, n = heapq.heappop(self.bids)
                     if len(self.bids) == 0:   # ran out of bids??
-                        self.bid(1, self.midprice-0.01)
+                        self.bid(1, round(self.midprice,2)-0.01)
                     self.high_bid = -self.bids[0][0]
                 while self.low_ask < self.midprice:
                     price, n = heapq.heappop(self.asks)
                     if len(self.asks) == 0:  # ran out of asks??
-                        self.ask(1, self.midprice+0.01)
+                        self.ask(1, round(self.midprice,2)+0.01)
                     self.low_ask = self.asks[0][0]
                 self.spread = self.low_ask - self.high_bid
                 self.delta_b = self.midprice - self.high_bid

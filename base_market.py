@@ -19,7 +19,8 @@ class Market():
         self.Lambda_b = 20  # average "volume" of market orders at each step
         self.Lambda_s = 20  
         self.K_b = 1  # as K increases, rate w delta decreases
-        self.K_s = 1
+        self.K_s = 1 
+        self.betas = (7.40417, -3.12017, 0.167814)  #ryan's new model
         # action stuff
         self.sigma = config.sigma
         self.gamma = config.gamma 
@@ -47,12 +48,18 @@ class Market():
 # --- ENVIRONMENT / DYNAMICS --- #
 #TODO: implement the latest version of ryans thing 
 # that takes in the quantities instead of delta_a, delta_b
-    def lambda_buy(self, delta_a):
+    def avellaneda_lambda_buy(self, delta_a):
         k = self.alpha * self.K_b
         A = self.Lambda_b / self.alpha
         return A * np.exp(-k*delta_a)
+    
+    def lambda_buy(self, q):
+        return np.exp(self.betas[0]+self.betas[1]*np.log(1+q)+self.betas[2]*np.log(1+q)**2)
+    
+    def lambda_sell(self, q):
+        return self.lambda_buy(q)
 
-    def lambda_sell(self, delta_b):
+    def avellaneda_lambda_sell(self, delta_b):
         k = self.alpha * self.K_s
         A = self.Lambda_s / self.alpha
         return A * np.exp(-k*delta_b)

@@ -11,7 +11,7 @@ class Config:
                  lr=1e-3, discount=0.99, 
                  discrete=False, use_baseline=True, normalize_advantages=True, 
                  eps_clip=0.2, do_clip = True, entropy_coef = 0.02, 
-                 nbatch=10, nepoch=100, nt=1000, dt=1e-3, max_t=0, 
+                 nbatch=100, nepoch=1000, nt=10000, dt=1e-3, max_t=0, 
                  gamma=1, sigma=1e-2, trajectory='MC',
                  update_freq=5) -> None:
         # network stuff
@@ -33,6 +33,7 @@ class Config:
         self.lr = lr
         self.trajectory = trajectory
         # set time parameters. np.arange(0, max_t, dt) | np.linspace(0, max_t, nt)
+        self.starting_epoch = 0
         self.ne = nepoch
         self.nb = nbatch
         self.dt = dt
@@ -55,36 +56,45 @@ class Config:
         self.entropy_coef = entropy_coef  # PPO entropy coefficient
         self.update_freq = update_freq    # how many times to gradient step in a row
         # savenames
-        log_name = f"{trajectory}_{self.ne}-{self.nb}-{self.nt}_{to_TF(discrete)}{to_TF(use_baseline)}{to_TF(normalize_advantages)}"
+        self.set_name()
+    
+    def set_name(self, epoch=None):
+        base_name = f"{self.trajectory}_{self.ne}-{self.nb}-{self.nt}_{to_TF(self.discrete)}{to_TF(self.use_baseline)}{to_TF(self.normalize_advantages)}{to_TF(self.do_clip)}"
         # make new directory to store results
-        L = len(log_name)
+        L = len(base_name)
         i = 0; dontmakedir=False
-        while os.path.exists(SAVEDIR+"/"+log_name):
-            with open(SAVEDIR+"/"+log_name+"/"+log_name+".log", "r") as f:
-                if f.readline() == '':
-                    dontmakedir=True
-                    break
+        while os.path.exists(SAVEDIR+"/"+base_name):
+            if os.path.exists(SAVEDIR+"/"+base_name+"/"+base_name+".log"):
+                with open(SAVEDIR+"/"+base_name+"/"+base_name+".log", "r") as f:
+                    if f.readline() == '':
+                        dontmakedir=True
+                        break
             log_name = log_name[:L]+str(i)
             i += 1
         if not dontmakedir: os.mkdir(SAVEDIR+"/"+log_name)
         self.save_dir = SAVEDIR+"/"+log_name+"/"
+        if isinstance(epoch, int): 
+            log_name = f"{epoch}_" + log_name
         self.name = log_name
         self.out = self.save_dir + log_name
         self.log_path = self.save_dir+log_name + ".log"
         self.scores_output = self.save_dir+log_name+"_scores.npy"
         self.plot_output = self.save_dir+log_name+"_rewards.png"
+        return self.name, self.out
 
 def get_config(pathname: str) -> Config:
-    """ Load a configuration from a file """
+    """ Load a configuration from a filename """
     if "/" in pathname:
         pathname = pathname.split("/")[-1]
     config = Config()
     parts = pathname.split("_")
-    if len(parts) >= 3:
-        return False
+    if parts[0].isdigit():
+        config.starting_epoch = int(parts[0])
+        parts = parts[1:]
     config.trajectory = parts[0]
     config.ne, config.nb, config.nt = map(int, parts[1].split("-"))
     config.discrete = parts[2][0] == "T"
     config.use_baseline = parts[2][1] == "T"
     config.normalize_advantages = parts[2][2] == "T"
+    config.do_clip = parts[2][3] == "T"
     return config

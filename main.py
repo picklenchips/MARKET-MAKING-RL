@@ -11,6 +11,7 @@ parser.add_argument("-nb", "--nb", type=int)
 parser.add_argument("-nt", "--nt", type=int)
 parser.add_argument("-l", "--load", help='load a model from a filepath/name')
 parser.add_argument("--seed", default=0, type=int)
+parser.add_argument("--noclip", action='store_true')
 # TD LAMBDA STUFF?
 parser.add_argument("--td", action='store_true')
 
@@ -36,6 +37,9 @@ if __name__ == "__main__":
     if args.nb: config.nb = args.nb
     if args.nt: config.nt = args.nt
     if args.ne: config.ne = args.ne
+    if args.noclip: config.do_clip = False
 
     MM = MarketMaker(config)
+    print(f"Training {config.name}")
     MM.train()
+    print(f"Training done! Saved to {config.name}")

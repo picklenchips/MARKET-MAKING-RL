@@ -5,6 +5,7 @@ from base_market import Market
 from policy import PPO
 from util import np, get_logger, plot_WIM, export_plot
 from tqdm import tqdm
+import os
 
 class MarketMaker:
     def __init__(self, config: Config, inventory=0, wealth=0) -> None:
@@ -70,7 +71,6 @@ class MarketMaker:
                     midprices[b, t] = midprice
             rewards[b, t] += self.market.final_reward(dW, I, self.market.book.midprice)
             pbar.update(1)
-            #pbar.set_postfix_str(f"Reward {rewards[b, -1]}", refresh=True)
         observations = trajectories[...,:obs_dim]
         paths = {"tra": trajectories, "obs": observations, "act": actions, "rew": rewards}
         if self.PPO:
@@ -97,6 +97,7 @@ class MarketMaker:
                 else:
                     raise NotImplementedError
                 pbar.set_description(f"Updating {epoch}",refresh=True)
+                #pbar.set_postfix_str(f"Reward {rewards[b, -1]}", refresh=True)
                 if plot_after:
                     if epoch + 1 % plot_after == 0:
                         plot_WIM(paths['wea'], paths['inv'], paths['mid'], title=f'epoch {epoch}')
@@ -104,12 +105,10 @@ class MarketMaker:
                 advantages = self.P.get_advantages(returns, paths['tra'])
                 # first update will have old_logprobs = logprobs, so do 
                 # C steps of policy updates on the same trajectories
-                for k in range(self.config.update_freq):
+                for C in range(self.config.update_freq):
                     self.P.baseline.update_baseline(returns, paths['tra'])
                     self.P.update_policy(paths['obs'], paths['act'], advantages, old_logprobs=paths.get('old'))
                 # log everything=
-                # compute reward statistics for this batch and log
-                # only care about final rewards
                 rewards = paths['rew'][:,-1]
                 avg_reward = np.mean(rewards)
                 sigma_reward = np.sqrt(np.var(rewards) / len(rewards))
@@ -118,25 +117,30 @@ class MarketMaker:
                 )
                 final_rewards.append(rewards)
                 self.logger.info(msg)
+                self.save(epoch+1)   # intermediately save the market maker for later loading
+                np.save(self.config.scores_output, final_rewards)
         final_rewards = np.array(final_rewards)
         self.logger.info("DONZO BONZO!")
         np.save(self.config.scores_output, final_rewards)
         export_plot(final_rewards,"Scores",self.config.name,self.config.out+'_scores.png')
-        self.save()
+        self.save(epoch+1)
         # plot last lil sample
         with tqdm(total=100) as pbar:
             path = self.get_paths(pbar, nb=100, track_all=True)
             plot_WIM(path['wea'], path['inv'], path['mid'], self.config.dt, title=f'Final Path (100 batches) {self.config.name}', savename=self.config.out+'_final.png')
 
 # --- SAVE / LOAD --- #
-    def save(self):
+    def save(self, epoch):
         """ Save a trained market maker model """
-        name = self.config.out
+        old_out = self.config.out
+        name, out = self.config.set_name(epoch)
         if self.config.use_baseline:
-            torch.save(self.P.baseline.network.state_dict(), name+"_val.pth")
-            print(f"Saved baseline network to {name}_val.pth")
-        torch.save(self.P.policy.state_dict(), name+"_pol.pth")
-        print(f"Saved policy network to {name}_pol.pth")
+            if os.path.exists(old_out+"_val.pth"): os.remove(old_out+"_val.pth")
+            torch.save(self.P.baseline.network.state_dict(), out+"_val.pth")
+            self.logger.info(f"Saved baseline network to {name}_val.pth")
+        if os.path.exists(old_out+"_pol.pth"): os.remove(old_out+"_pol.pth")
+        torch.save(self.P.policy.state_dict(), out+"_pol.pth")
+        self.logger.info(f"Saved policy network to {name}_pol.pth")
 
     def load(self):
         """ Return a trained market maker model from same config """

@@ -28,7 +28,7 @@ class OrderBook():
 
         # BROWNIAN MIDPRICE
         self.drift = 3.59e-6
-        self.scale = .08685
+        self.scale = 0.08685
         self.max_t = 1
         self.baseline = baseline
         self.midprice = self.baseline
@@ -41,12 +41,12 @@ class OrderBook():
 
     def recalculate(self):
         """ Recalculate self.midprice and self.spread """
-        self.spread = self.midprice = 0
+        self.spread = 0
         self.delta_b = self.delta_a = 0
         self.low_ask = self.high_bid = 0
         self.nlow_ask = self.nhigh_bid = 0
         if len(self.asks):
-            self.low_ask = self.midprice = self.asks[0][0]
+            self.low_ask = self.asks[0][0]
             self.nlow_ask = self.asks[0][1]
             if len(self.bids):
                 self.high_bid = -self.bids[0][0]; self.nhigh_bid = self.bids[0][1]
@@ -58,7 +58,7 @@ class OrderBook():
                 if self.spread < 0:
                     print("ERROR: unrealistic spread!!")
         elif len(self.bids):
-            self.high_bid = self.midprice = -self.bids[0][0]
+            self.high_bid = -self.bids[0][0]
             self.nhigh_bid = self.bids[0][1]
 
     def buy(self, nstocks: int, maxprice=0.0):
@@ -191,4 +191,5 @@ if __name__ == "__main__":
             n = np.random.randint(1,10)
             print(f'placing sell order of (${sell_orders[i]},{n}). ')
             book.ask(n,sell_orders[i])
+            book.update_midprice()
         book.plot()

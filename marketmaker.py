@@ -122,6 +122,7 @@ class MarketMaker:
         self.logger.info("DONZO BONZO!")
         np.save(self.config.scores_output, final_rewards)
         export_plot(final_rewards,"Scores",self.config.name,self.config.out+'_scores.png')
+        self.save()
         # plot last lil sample
         with tqdm(total=100) as pbar:
             path = self.get_paths(pbar, nb=100, track_all=True)

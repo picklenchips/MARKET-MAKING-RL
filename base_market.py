@@ -20,7 +20,7 @@ class Market():
         self.Lambda_s = 20  
         self.K_b = 1  # as K increases, rate w delta decreases
         self.K_s = 1 
-        self.betas = (7.40417, -3.12017, 0.167814)  #ryan's new model
+        self.betas = (7.40417, -3.12017, 0.167814)  # ryan's new model
         self.largest_order = 1000  # largest order size
         # action stuff
         self.sigma = config.sigma
@@ -45,14 +45,12 @@ class Market():
             # perform random MARKET ORDERS
             dW, dI, mid = self.step(substeps)
             state  = self.state()
-            if state[0] == 0 or state[2] == 0:
-                print("OOF: ",state)
             # perform random LIMIT ORDERS using naive action
             self.act(state)
             if plot:
                 print(state)
                 self.book.plot()
-    
+
 # --- ENVIRONMENT / DYNAMICS --- #
 #TODO: implement the latest version of ryans thing 
 # that takes in the quantities instead of delta_a, delta_b

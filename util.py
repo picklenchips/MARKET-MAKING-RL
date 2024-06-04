@@ -14,7 +14,10 @@ import sys, time, os
 from scipy.optimize import curve_fit
 from tqdm import tqdm
 import torch
+import torch
 import torch.nn as nn
+import logging
+from scipy import stats
 import logging
 from scipy import stats
 #from torch.masked import masked_tensor
@@ -25,18 +28,23 @@ hexcolors = ['648FFF', 'DC267F', 'FE6100', '785EF0', 'FFB000', '009E73', '3DDBD9
 mpl.rcParams['axes.prop_cycle'] = cycler('color', [mpl.colors.to_rgba('#' + c) for c in hexcolors])
 
 FIGSIZE = (10,6)
-SAVEDIR = os.getcwd()+"/"
+SAVEDIR = os.path.join(os.getcwd(), "plots")
+os.makedirs(SAVEDIR, exist_ok=True)
 SAVEEXT = ".png"
 np.set_printoptions(precision=4)
 
 
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-def np2torch(x: np.ndarray) -> torch.Tensor:
+def np2torch(x, cast_double_to_float=True):
     #mask = 0
     #if isinstance(x, np.ma.masked_array):
     #    mask = torch.from_numpy(x.mask).to(device)
-    x = torch.from_numpy(x).to(device)
-    if x.dtype is torch.float64: x = x.float()  # cast double to float
+    if isinstance(x, np.ndarray):
+        x = torch.from_numpy(x).to(device)
+    else:
+        x = torch.Tensor(x).to(device)
+    if cast_double_to_float and x.dtype == torch.float64:
+        x = x.float()  # cast double to float
     #if not isinstance(mask, int):
     #    x = masked_tensor(x, mask)
     return x

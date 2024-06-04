@@ -29,7 +29,7 @@ class OrderBook():
 
         # BROWNIAN MIDPRICE
         self.drift = 3.59e-6
-        self.scale = 0.08685
+        self.scale = 2.4e-3
         self.max_t = 1
         self.baseline = baseline
         self.midprice = self.baseline

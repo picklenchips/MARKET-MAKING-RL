@@ -114,7 +114,7 @@ class PolicyGradient():
         self.policy = CategoricalPolicy(network) if self.config.discrete else GaussianPolicy(network, self.config.act_dim)
         self.optimizer = torch.optim.Adam(params=self.policy.parameters(),lr=self.config.lr)
 
-    def get_returns(self, rewards: np.ndarray | np.ma.MaskedArray):
+    def get_returns(self, rewards: np.ndarray):
         """ Compute discounted returns from batched rewards of shape (nbatch x nt) """
         returns = np.empty_like(rewards)
         returns[:, -1] = rewards[:, -1]
@@ -133,6 +133,34 @@ class PolicyGradient():
             finals.append(returns[-1])
             for t in reversed(range(len(rewards)-1)):
                 returns[t] = rewards[t] + self.discount*rewards[t+1]
+            all_returns.append(returns)
+        return np.concatenate(all_returns), np.array(finals)
+    
+    def get_td_returns(self, rewards, values):
+        """ Compute TD(λ) returns """
+        td_lambda_returns = np.zeros_like(rewards)
+        for b in range(rewards.shape[0]):
+            G = rewards[b, -1] + self.config.discount * values[b, -1]
+            for t in reversed(range(rewards.shape[1]-1)):
+                G = rewards[b, t] + self.config.discount * ((1 - self.config.lambd) * values[b, t+1] + self.config.lambd * G)
+                td_lambda_returns[b, t] = G
+        return td_lambda_returns
+
+    def get_uneven_td_returns(self, paths: list) -> np.ndarray:
+        """ Comupte uneven TD(λ) returns """
+        all_returns = []
+        finals = []
+        for path in paths:
+            rewards = path['rew']
+            returns = np.empty_like(rewards)
+            values = self.baseline.forward(np2torch(path['traj'])).cpu().detach().numpy()
+            returns[-1] = rewards[-1]
+            G = rewards[-1] + self.config.discount * values[-1]
+            returns[-1] = G
+            finals.append(G)
+            for t in reversed(range(len(rewards)-1)):
+                G = rewards[t] + self.config.discount * ((1 - self.config.lambd) * values[t+1] + self.config.lambd * G)
+                returns[t] = G
             all_returns.append(returns)
         return np.concatenate(all_returns), np.array(finals)
     

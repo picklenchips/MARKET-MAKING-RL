@@ -13,16 +13,13 @@ class Config:
                  do_ppo = True, eps_clip=0.2, do_clip = True, entropy_coef = 0.02, 
                  nbatch=100, nepoch=1000, nt=10000, dt=1e-3, max_t=0, 
                  gamma=1, sigma=1e-2, trajectory='MC',
-                 update_freq=5) -> None:
+                 update_freq=5, lambd=0.9) -> None:
         # network stuff
         if trajectory == 'MC':
             # set default values for MC
             pass
         elif trajectory == 'TD':
-            #TODO 
-            self.lambd = 0.9 #? ? ? ?
-            # set default values for TD?
-            raise NotImplementedError
+            self.lambd = lambd
         self.book_quit = True   # END EARLY IF BOOK IS INVALID
 
         self.obs_dim = obs_dim  # policy input

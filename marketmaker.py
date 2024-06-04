@@ -3,7 +3,7 @@ from config import Config
 import torch
 from base_market import Market
 from policy import PPO
-from util import np, get_logger, plot_WIM, plot_WIM_2, export_plot
+from util import np, get_logger, plot_WIM, plot_WIM_2, export_plot, np2torch
 from tqdm import tqdm
 import os
 
@@ -88,7 +88,15 @@ class MarketMaker:
             paths.append(path)
         return paths
     
-    #TODO: implement TD lambda shits? gonna need a different config too IG
+    def get_td_lambda_returns(self, rewards, values, nt, nbatch):
+        """ Compute (uneven) TD(λ) returns """
+        td_lambda_returns = np.zeros_like(rewards)
+        for b in range(nbatch):
+            G = rewards[b, -1] + self.config.discount * values[b, -1]
+            for t in reversed(range(nt-1)):
+                G = rewards[b, t] + self.config.discount * ((1 - self.config.lambd) * values[b, t+1] + self.config.lambd * G)
+                td_lambda_returns[b, t] = G
+        return td_lambda_returns
 
     def train(self, plot_after=False):
         """ Train number of epochs x nbatch things
@@ -99,22 +107,22 @@ class MarketMaker:
             for epoch in range(self.config.starting_epoch, self.config.ne):
                 pbar.set_description(f"Epoch {epoch}",refresh=True)
                 #TODO: TD Lambda insertion here
-                if self.config.trajectory == 'MC':
-                    paths = self.get_paths(pbar, nbatch, track_all=plot_after)
-                else:
-                    raise NotImplementedError
-                #pbar.set_description(f"Updt {epoch}",refresh=True)
-                #pbar.set_postfix_str(f"Reward {rewards[b, -1]}", refresh=True)
-                if plot_after:
-                    if epoch + 1 % plot_after == 0:
-                        plot_WIM_2(paths, self.dt, title=f'epoch {epoch}', savename=self.config.out+'.png')
+                paths = self.get_paths(pbar, nb=nbatch, track_all=plot_after)
                 # combine all the trajectories into a single batch tensor
                 # size (batch_size **) x dim
-                returns, finals = self.P.get_uneven_returns(paths)
                 trajectories = np.concatenate([path['tra'] for path in paths])
                 observations = np.concatenate([path['obs'] for path in paths])
                 actions = np.concatenate([path['act'] for path in paths])
+                rewards = np.concatenate([path['rew'] for path in paths])
                 if self.do_ppo: logprobs = np.concatenate([path['old'] for path in paths])
+                
+                if self.config.trajectory == 'MC':
+                    returns, finals = self.P.get_uneven_returns(paths)
+                elif self.config.trajectory == 'TD':
+                    returns, finals = self.P.get_uneven_td_returns(paths)
+                else:
+                    raise NotImplementedError("Trajectory type not supported")
+                
                 advantages = self.P.get_advantages(returns, trajectories)
                 # first update will have old_logprobs = logprobs, so do 
                 # C steps of policy updates on the same trajectories
@@ -127,6 +135,9 @@ class MarketMaker:
                 # log the returns
                 self.final_returns.append(finals)
                 self.save(epoch+1)   # intermediately save the market maker for later loading
+
+                if plot_after and epoch + 1 % plot_after == 0:
+                    plot_WIM_2(paths, self.dt, title=f'epoch {epoch}', savename=self.config.out+'.png')
         self.logger.info("DONZO BONZO!")
         self.save(epoch+1)
         self.plot()
@@ -246,8 +257,6 @@ class UniformMarketMaker(MarketMaker):
             paths["inv"] = inventory
             paths["mid"] = midprices
         return paths
-    
-    #TODO: implement TD lambda shits? gonna need a different config too IG
 
     def train(self, plot_after=False):
         """ Train number of epochs x nbatch things
@@ -256,27 +265,39 @@ class UniformMarketMaker(MarketMaker):
         nepoch = self.config.ne - self.config.starting_epoch
         with tqdm(total=nepoch*nbatch) as pbar:  # make local pbar instance
             for epoch in range(self.config.starting_epoch, self.config.ne):
-                pbar.set_description(f"Epoch {epoch}",refresh=True)
-                #TODO: TD Lambda insertion here
+                pbar.set_description(f"Epoch {epoch}", refresh=True)
+                
+                # Get paths and returns based on trajectory type
                 if self.config.trajectory == 'MC':
-                    paths = self.get_paths(pbar, nbatch, track_all=plot_after)
+                    paths = self.get_paths(pbar, nb=nbatch, track_all=plot_after)
+                    returns = self.P.get_returns(paths['rew'])
+                elif self.config.trajectory == 'TD':
+                    paths = self.get_paths(pbar, nb=nbatch, track_all=plot_after)
+                    values = self.P.baseline.network(np2torch(paths['tra'])).detach().cpu().numpy()
+                    returns = self.get_td_lambda_returns(paths['rew'], values, self.nt, nbatch)
                 else:
-                    raise NotImplementedError
+                    raise NotImplementedError("Trajectory type not supported")
                 #pbar.set_description(f"Updt {epoch}",refresh=True)
                 #pbar.set_postfix_str(f"Reward {rewards[b, -1]}", refresh=True)
                 if plot_after:
                     if epoch + 1 % plot_after == 0:
                         plot_WIM(paths['wea'], paths['inv'], paths['mid'], self.dt, title=f'epoch {epoch}', savename=self.config.out+'.png')
-                returns = self.P.get_returns(paths['rew'])
+
                 advantages = self.P.get_advantages(returns, paths['tra'])
-                # first update will have old_logprobs = logprobs, so do 
-                # C steps of policy updates on the same trajectories
+
+                # Policy updates
                 for C in range(self.config.update_freq):
                     self.P.baseline.update_baseline(returns, paths['tra'])
                     self.P.update_policy(paths['obs'], paths['act'], advantages, old_logprobs=paths.get('old'))
-                # log the returns
-                self.final_returns.append(returns[:,-1])
-                self.save(epoch+1)   # intermediately save the market maker for later loading
-        self.logger.info("DONZO BONZO!")
-        self.save(epoch+1)
+
+                # Log the returns
+                self.final_returns.append(returns[:, -1])
+                self.save(epoch + 1)   # intermediately save the market maker for later loading
+
+                # Plot if required
+                if plot_after and (epoch + 1) % plot_after == 0:
+                    plot_WIM(paths['wea'], paths['inv'], paths['mid'], title=f'Epoch {epoch}', savename=self.config.out + '.png')
+
+        self.logger.info("Training complete!")  # DONZO BONZO
+        self.save(epoch + 1)
         self.plot()

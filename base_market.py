@@ -19,8 +19,7 @@ class Market():
         self.Lambda_s = 20  
         self.K_b = 1  # as K increases, rate w delta decreases
         self.K_s = 1 
-        # NEW
-        self.betas = (7.40417, -3.12017, 0.167814)  #ryan's new model
+        self.betas = (7.40417, -3.12017, 0.167814)  # ryan's new model
         # action stuff
         self.sigma = config.sigma
         self.gamma = config.gamma 
@@ -56,6 +55,9 @@ class Market():
             old_book = self.book.copy()
             old_state = self.state()
             dW, dI, mid = self.step(substeps)
+            state  = self.state()
+            if state[0] == 0 or state[2] == 0:
+                print("OOF: ",state)
             # perform random LIMIT ORDERS using naive action
             state = self.state()
             if state[0] == 0 or state[2] == 0:
@@ -210,4 +212,4 @@ if __name__ == "__main__":
     config = Config()
     M = Market(0, 0, config)
     for i in range(100):
-        M.reset(plot=True)
+        M.reset(plot=True, make_bell=False)

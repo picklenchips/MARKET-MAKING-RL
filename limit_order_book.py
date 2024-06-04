@@ -2,6 +2,7 @@ from util import uFormat, mpl, plt, np
 from util import FIGSIZE, SAVEDIR, SAVEEXT
 import heapq  # priority queue
 from stochastic.processes.continuous.brownian_motion import BrownianMotion
+import math  # for ceil
 
 class OrderBook():
     """
@@ -33,6 +34,10 @@ class OrderBook():
         self.baseline = baseline
         self.midprice = self.baseline
         self.model = BrownianMotion(drift=self.drift, scale=self.scale, t=self.max_t)
+
+        # ensure there are ALWAYS enough stocks to buy/sell stuff
+        self.worst_bid = 0.01
+        self.worst_ask = 100*baseline
     
     def update_midprice(self):
         """ Update midprice of market """
@@ -73,8 +78,8 @@ class OrderBook():
             self.nhigh_bid = self.bids[0][1]
 
     def buy(self, nstocks: int, maxprice=0.0):
-        """Buy (up to) nstocks stocks to lowest-priced limit-sell orders
-        returns tuple of int: num stocks bought, 
+        """ Buy (up to) nstocks stocks to lowest-priced limit-sell (ask) orders
+        returns tuple of int: num stocks bought,
                          list of (price, n_stocks) orders that have been bought
         optionally, only buy stocks valued below max price"""
         n_bought = total_bought = 0; do_update = False
@@ -94,11 +99,15 @@ class OrderBook():
             else: 
                 do_update = True
             nstocks -= n
+        # disencentivize running out of asks - you paid someone to buy your stock
+        if nstocks > 0 and not len(self.asks):
+            total_bought = -1
+            n_bought     = 1
         if do_update: self.recalculate()
         return n_bought, total_bought
 
     def sell(self, nstocks: int, minprice=0.0):
-        """Sell (up to) nstocks stocks to highest-priced limit-buy orders
+        """Sell (up to) nstocks stocks to highest-priced limit-buy (bid) orders
         optionally, only sell stocks valued above min price"""
         n_sold = total_sold = 0; do_update = False
         #sold = []  # keep track of orders sold
@@ -118,12 +127,21 @@ class OrderBook():
             else: 
                 do_update = True
             nstocks -= n
+        # disencentivize running out of bids - you paid someone and gave them your stock
+        if nstocks > 0 and not len(self.bids):
+            total_sold = -1
+            n_sold     = 1
         if do_update: self.recalculate()
         return n_sold, total_sold
 
     def bid(self, nstocks: int, price: float):
         """ Add a limit-buy order. Sorted highest-to-lowest """
         price = round(price, 2)  # can only buy/sell in cents
+        # ALLOW AGENT TO WIDEN THE SPREAD by eating the book
+        if nstocks < 0:
+            nsold, sold = self.sell(-nstocks, minprice=price)
+            self.recalculate()
+            return
         # buying higher than lowest sell -> market buy instead
         if len(self.asks):
             if price >= self.asks[0][0]:
@@ -132,12 +150,17 @@ class OrderBook():
                 if nstocks == 0: return  # all eaten!
         heapq.heappush(self.bids, (-price, nstocks))
         # is now highest buy order, recalculate
-        if -price == self.bids[0][0]:
+        if price == -self.bids[0][0]:
             self.recalculate()
 
     def ask(self, nstocks: int, price: float):
         """ Add a limit-sell order """
         price = round(price, 2)  # can only buy/sell in cents
+        # ALLOW AGENT TO WIDEN THE SPREAD by eating the book
+        if nstocks < 0:
+            nbought, bought = self.buy(-nstocks, maxprice=price)
+            self.recalculate()
+            return
         # selling lower than highest buy order -> sell some now!
         if len(self.bids):
             if price <= -self.bids[0][0]:
@@ -155,13 +178,20 @@ class OrderBook():
         ax.set(xlabel='Price per Share',ylabel='Volume')
         # normalize the bin widths
         nbins = 100  # total nbins across range of data
+        if not len(self.asks):
+            print('No asks in the order book!')
+        if not len(self.bids):
+            print('No bids in the order book!')
+        if not len(self.asks) or not len(self.bids):
+            plt.close()
+            return
         highest_ask = max([a[0] for a in self.asks])
         lowest_bid  = min([-b[0] for b in self.bids])
         pricerange = highest_ask - lowest_bid
-        brange = self.high_bid - lowest_bid
-        arange = highest_ask - self.low_ask
-        bbins = int(nbins*brange/pricerange)
-        abins = int(nbins*arange/pricerange)
+        brange = max(self.high_bid - lowest_bid,0.01)
+        arange = max(highest_ask - self.low_ask,0.01)
+        bbins = math.ceil(nbins*brange/pricerange)
+        abins = math.ceil(nbins*arange/pricerange)
         # plot the bids and asks
         ax.hist([-b[0] for b in self.bids], weights = [b[1] for b in self.bids], bins=bbins,label='Bids',edgecolor='black',linewidth=0.5)
         ax.hist([s[0] for s in self.asks], weights = [s[1] for s in self.asks], bins=abins,label='Asks',edgecolor='black',linewidth=0.5)

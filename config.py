@@ -56,30 +56,30 @@ class Config:
         self.entropy_coef = entropy_coef  # PPO entropy coefficient
         self.update_freq = update_freq    # how many times to gradient step in a row
         # savenames
-        self.set_name()
     
-    def set_name(self, epoch=None):
-        base_name = f"{self.trajectory}_{self.ne}-{self.nb}-{self.nt}_{to_TF(self.discrete)}{to_TF(self.use_baseline)}{to_TF(self.normalize_advantages)}{to_TF(self.do_clip)}"
+    def set_name(self, epoch=None, make_new=False):
+        name = f"{self.trajectory}_{self.ne}-{self.nb}-{self.nt}_{to_TF(self.discrete)}{to_TF(self.use_baseline)}{to_TF(self.normalize_advantages)}{to_TF(self.do_clip)}"
         # make new directory to store results
-        L = len(base_name)
-        i = 0; dontmakedir=False
-        while os.path.exists(SAVEDIR+"/"+base_name):
-            if os.path.exists(SAVEDIR+"/"+base_name+"/"+base_name+".log"):
-                with open(SAVEDIR+"/"+base_name+"/"+base_name+".log", "r") as f:
-                    if f.readline() == '':
-                        dontmakedir=True
-                        break
-            log_name = log_name[:L]+str(i)
-            i += 1
-        if not dontmakedir: os.mkdir(SAVEDIR+"/"+log_name)
-        self.save_dir = SAVEDIR+"/"+log_name+"/"
-        if isinstance(epoch, int): 
-            log_name = f"{epoch}_" + log_name
-        self.name = log_name
-        self.out = self.save_dir + log_name
-        self.log_path = self.save_dir+log_name + ".log"
-        self.scores_output = self.save_dir+log_name+"_scores.npy"
-        self.plot_output = self.save_dir+log_name+"_rewards.png"
+        L = len(name)
+        i = 0  # duplicate models?
+        # if model is fully complete, don't overwrite
+        if make_new:
+            while os.path.exists(f"{SAVEDIR}/{name}/{self.ne}_{name}_val.pth"):
+                name = name[:L]+str(i)
+                i += 1
+        if not os.path.exists(f"{SAVEDIR}/{name}"):
+            os.mkdir(f"{SAVEDIR}/{name}")
+        # SET NAMES
+        self.save_dir = f"{SAVEDIR}/{name}/"
+        self.base_name = name
+        if isinstance(epoch, int):   # number of epochs completed
+            name = f"{epoch}_" + name
+        self.name = name
+        self.out  = self.save_dir + name
+        self.scores_out = self.out+'_scores.npy'
+        self.scores_plot = self.out+'_scores.png'
+        self.wim_plot   = self.out+'_wim.png'
+        self.log_out    = self.save_dir+self.base_name+".log"
         return self.name, self.out
 
 def get_config(pathname: str) -> Config:
@@ -97,4 +97,5 @@ def get_config(pathname: str) -> Config:
     config.use_baseline = parts[2][1] == "T"
     config.normalize_advantages = parts[2][2] == "T"
     config.do_clip = parts[2][3] == "T"
+    config.set_name(config.starting_epoch)
     return config

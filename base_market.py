@@ -21,6 +21,7 @@ class Market():
         self.K_b = 1  # as K increases, rate w delta decreases
         self.K_s = 1 
         self.betas = (7.40417, -3.12017, 0.167814)  #ryan's new model
+        self.largest_order = 1000  # largest order size
         # action stuff
         self.sigma = config.sigma
         self.gamma = config.gamma 
@@ -31,19 +32,26 @@ class Market():
         self.b = 1  # how much we weigh dI
         self.discount = config.discount
 
-    def reset(self, mid=100, spread=10, nstocks=100, nsteps=100, substeps=1):
+    def reset(self, mid=100, spread=10, nstocks=1000, nsteps=100, substeps=1, plot=False):
         """ Randomly initialize order book """
         if self.book: del(self.book)
         self.book = OrderBook(mid)
         # start with symmetric spread
         self.book.bid(nstocks//2, mid-spread/2)
         self.book.ask(nstocks//2, mid+spread/2)
+        if plot:
+            self.book.plot()
         for t in range(nsteps):
             # perform random MARKET ORDERS
             dW, dI, mid = self.step(substeps)
             state  = self.state()
+            if state[0] == 0 or state[2] == 0:
+                print("OOF: ",state)
             # perform random LIMIT ORDERS using naive action
             self.act(state)
+            if plot:
+                print(state)
+                self.book.plot()
     
 # --- ENVIRONMENT / DYNAMICS --- #
 #TODO: implement the latest version of ryans thing 
@@ -54,6 +62,7 @@ class Market():
         return A * np.exp(-k*delta_a)
     
     def lambda_buy(self, q):
+        if not q: return 0
         return np.exp(self.betas[0]+self.betas[1]*np.log(1+q)+self.betas[2]*np.log(1+q)**2)
     
     def lambda_sell(self, q):
@@ -70,9 +79,8 @@ class Market():
         dW = dI = 0
         for step in range(nsteps):
             self.book.update_midprice()  # STEP MIDPRICE
-            delta_b = self.book.delta_b; delta_a = self.book.delta_a
-            nbuy  = np.random.poisson(self.lambda_buy(delta_a))
-            nsell = np.random.poisson(self.lambda_sell(delta_b))
+            nbuy  = np.random.poisson(self.lambda_buy(self.book.nlow_ask))
+            nsell = np.random.poisson(self.lambda_sell(self.book.nhigh_bid))
             n_ask_lift, bought = self.book.buy(nbuy)
             n_bid_hit, sold = self.book.sell(nsell)
             dW += bought - sold; dI += n_bid_hit - n_ask_lift
@@ -102,8 +110,8 @@ class Market():
             n_bid, bid_price, n_ask, ask_price = state
             bid_price = np.random.normal(bid_price, delta_b/4)
             ask_price = np.random.normal(ask_price, delta_a/4)
-            n_bid = np.random.poisson(n_bid/2)
-            n_ask = np.random.poisson(n_ask/2) 
+            n_bid = np.random.poisson(n_bid*3/4)
+            n_ask = np.random.poisson(n_ask*3/4) 
             action = (n_bid, bid_price, n_ask, ask_price)
         elif len(state) == 3:  # avellaneda policy
             wealth, inventory, time_left = state
@@ -163,3 +171,11 @@ class Market():
 
     def optimal_spread(self, time_left):
         return self.gamma * self.sigma**2 * time_left + 2*np.log(1+2*self.gamma/(self.alpha*(self.K_b+self.K_a)))/self.gamma
+
+
+# --- TESTING --- #
+if __name__ == "__main__":
+    config = Config()
+    M = Market(0, 0, config)
+    for i in range(100):
+        M.reset(plot=True)

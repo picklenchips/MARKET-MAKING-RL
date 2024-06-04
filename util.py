@@ -46,12 +46,17 @@ def build_mlp(input_size, output_size, n_layers, hidden_size, activation=nn.ReLU
 
 def get_logger(filename):
     """ Return a logger instance to a file """
+    if os.path.exists(filename):
+        os.remove(filename)
     logger = logging.getLogger("logger")
     logger.setLevel(logging.DEBUG)
-    logging.basicConfig(filename=filename, format="%(message)s", level=logging.DEBUG)
+    logging.basicConfig(filename=filename, 
+                        format='%(asctime)s:%(name)-12s:%(levelname)-8s:%(message)s', 
+                        datefmt='%m-%d %H:%M',
+                        level=logging.DEBUG)
     handler = logging.FileHandler(filename)
     handler.setLevel(logging.DEBUG)
-    handler.setFormatter(logging.Formatter("%(asctime)s:%(levelname)s: %(message)s"))
+    handler.setFormatter(logging.Formatter('%(asctime)s:%(name)-12s:%(levelname)-8s:%(message)s'))
     logger.addHandler(handler)
     return logger
 

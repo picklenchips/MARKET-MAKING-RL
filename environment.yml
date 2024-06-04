@@ -10,3 +10,4 @@ dependencies:
   - pandas
   - argparse
   - stochastic
+  - pip: maskedtensor

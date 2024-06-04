@@ -71,8 +71,7 @@ class BaselineNetwork(nn.Module):
 
     def calculate_advantage(self, returns, observations):
         """ Compute advantages given returns """
-        if not isinstance(observations, torch.Tensor):
-            observations = np2torch(observations)
+        observations = np2torch(observations)
         return returns - self.forward(observations).cpu().detach().numpy()
 
     def update_baseline(self, returns, observations):
@@ -115,16 +114,27 @@ class PolicyGradient():
         self.policy = CategoricalPolicy(network) if self.config.discrete else GaussianPolicy(network, self.config.act_dim)
         self.optimizer = torch.optim.Adam(params=self.policy.parameters(),lr=self.config.lr)
 
-    def get_returns(self, rewards):
+    def get_returns(self, rewards: np.ndarray | np.ma.MaskedArray):
         """ Compute discounted returns from batched rewards of shape (nbatch x nt) """
-        if isinstance(rewards, np.ndarray):
-            returns = np.empty_like(rewards)
-        else:
-            returns = torch.empty_like(rewards)
+        returns = np.empty_like(rewards)
         returns[:, -1] = rewards[:, -1]
         for t in reversed(range(rewards.shape[1]-1)):
             returns[:, t] = rewards[:, t] + self.discount*rewards[:, t+1]
         return returns
+    
+    def get_uneven_returns(self, paths: list) -> np.ndarray:
+        """ Compute discounted returns from batched rewards of shape (nbatch x nt) """
+        all_returns = []
+        finals = []
+        for path in paths:
+            rewards = path['rew']
+            returns = np.empty_like(rewards)
+            returns[-1] = rewards[-1]
+            finals.append(returns[-1])
+            for t in reversed(range(len(rewards)-1)):
+                returns[t] = rewards[t] + self.discount*rewards[t+1]
+            all_returns.append(returns)
+        return np.concatenate(all_returns), np.array(finals)
     
     def get_advantages(self, returns, trajectories):
         """ Calculates the advantage for all of the observations
@@ -132,7 +142,7 @@ class PolicyGradient():
             - returns (nbatch x nt) np.ndarray
             - trajectories (nbatch x nt x val_dim) np.ndarray
         Output:
-            advantages: np.array of shape [batch size]
+            advantages: np.array of shape (nbatch x)
         """
         if self.config.use_baseline:
             advantages = self.baseline.calculate_advantage(returns, trajectories)
@@ -175,7 +185,7 @@ class PPO(PolicyGradient):
         Args:
             observations: np.array of shape [batch size, dim(observation space)]
             actions: np.array of shape
-                [batch size, dim(action space)] if continuous
+                batch size x nt x act_dim if continuous
                 [batch size] (and integer type) if discrete
             advantages: np.array of shape [batch size, 1]
             old_logprobs: np.array of shape [batch size]
@@ -187,7 +197,7 @@ class PPO(PolicyGradient):
         
         distribution = self.policy.action_distribution(observations)
         log_probs    = distribution.log_prob(actions)
-        z_ratio      =  torch.exp(log_probs - old_logprobs)
+        z_ratio      = torch.exp(log_probs - old_logprobs)
         entropy_loss = distribution.entropy()
         if self.do_clip:
             clip_z   = torch.clip(z_ratio,1-self.eps_clip,1+self.eps_clip)

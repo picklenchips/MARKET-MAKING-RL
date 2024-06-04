@@ -17,6 +17,7 @@ import torch
 import torch.nn as nn
 import logging
 from scipy import stats
+#from torch.masked import masked_tensor
 
 # blue = bids, red = asks
 #           |   Blue  |   Red  |  Orange |  Purple | Yellow  |   Green |   Teal  | Grey
@@ -30,9 +31,14 @@ np.set_printoptions(precision=4)
 
 
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-def np2torch(x):
+def np2torch(x: np.ndarray) -> torch.Tensor:
+    #mask = 0
+    #if isinstance(x, np.ma.masked_array):
+    #    mask = torch.from_numpy(x.mask).to(device)
     x = torch.from_numpy(x).to(device)
     if x.dtype is torch.float64: x = x.float()  # cast double to float
+    #if not isinstance(mask, int):
+    #    x = masked_tensor(x, mask)
     return x
 
 def build_mlp(input_size, output_size, n_layers, hidden_size, activation=nn.ReLU()):
@@ -64,35 +70,71 @@ def normalize(x):
     """ Normalize np.ndarray or torch.Tensor """
     return (x - x.mean()) / (x.std() + 1e-10)
 
+def list_to_masked(arrays: list[list]):
+    """
+    Returns masked (2d) array from list of arrays of potentially different lengths
+    """
+    lens = [len(arr) for arr in arrays]
+    all_arr = np.ma.empty( (len(arrays), max(lens)) )
+    all_arr.mask = True
+    for idx, arr in enumerate(arrays):
+        all_arr[idx, :lens[idx]] = np.array(arr)
+    return all_arr
+
 def plot_WIM(wealth: np.ndarray, inventory: np.ndarray, midprices: np.ndarray, dt: float, title='', savename=''):
     """ plot data from a batch of trajectories
     Inputs: (nbatch x nt) np.ndarrays """
     times = np.arange(0, wealth.shape[-1]*dt, dt)
-    fig, axs = plt.subplots(3,1, figsize=(10,8))
-    for i, y, name in zip((0,1,2),(wealth, inventory, midprices),('Wealth', 'Inventory', 'Midprice')):
+    fig, axs = plt.subplots(2,2, figsize=(12,10))
+    value =  wealth + inventory*midprices
+    c = 0
+    for i, y, name in zip(((0,0),(0,1),(1,0),(1,1)),(wealth, inventory, midprices,value),('Wealth', 'Inventory', 'Midprice', 'Value')):
         ax = axs[i]
         ax.set(ylabel=name)
-        ys = np.mean(y, axis=0)
-        yerrs = stats.sem(y, axis=0)
-        ax.fill_between(times, ys - yerrs, ys + yerrs, alpha=0.25, color=f"C{i}")
-        ax.plot(times, ys, color=f"C{i}")
-    axs[2].set(xlabel="Time")
-    i += 1
-    y = wealth + inventory*midprices
-    ys = np.mean(y, axis=0); yerrs = stats.sem(y, axis=0)
-    axs[0].fill_between(times, ys - yerrs, ys + yerrs, alpha=0.25, color=f"C{i}")
-    axs[0].plot(times, ys, label='Total Value', color=f"C{i}")
-    axs[0].legend()
-    if title: axs[0].set_title(title)
+        ys = y.mean(axis = 0)
+        yerrs = y.std(axis = 0)/np.sqrt(y.shape[-1])
+        ax.fill_between(times, ys - yerrs, ys + yerrs, alpha=0.25, color=f"C{c}")
+        ax.plot(times, ys, color=f"C{c}")
+    axs[0,1].set(xlabel="Time")
+    axs[1,1].set(xlabel='Time')
+    if title: fig.suptitle(title)
     if savename: plt.savefig(savename)
+    plt.show()
+
+def plot_WIM_2(paths, dt: float, title='', savename=''):
+    """ plot data from a batch of trajectories
+    Inputs: (nbatch x nt) np.ndarrays """
+    wealths = [p['wea'] for p in paths]
+    inventories = [p['inv'] for p in paths]
+    midprices = [p['mid'] for p in paths]
+    wealth = list_to_masked(wealths)
+    inventory = list_to_masked(inventories)
+    midprice = list_to_masked(midprices)
+    print(wealth.shape, inventory.shape, midprice.shape)
+    times = np.arange(0, wealth.shape[-1]*dt, dt)
+    fig, axs = plt.subplots(2,2, figsize=(12,10), sharex=True)
+    value = wealth + inventory*midprice
+    c = 0
+    for i, y, name in zip(((0,0),(0,1),(1,0),(1,1)),(wealth, inventory, midprice, value),('Wealth', 'Inventory', 'Midprice','Value')):
+        ax = axs[i]
+        ax.set(ylabel=name)
+        ys = y.mean(axis = 0)
+        yerrs = y.std(axis = 0)/np.sqrt(y.shape[-1])
+        ax.fill_between(times, ys - yerrs, ys + yerrs, alpha=0.25, color=f"C{c}")
+        ax.plot(times, ys, color=f"C{c}")
+        c += 1
+    axs[0,1].set(xlabel="Time")
+    axs[1,1].set(xlabel="Time")
+    if title: fig.suptitle(title)
+    if savename: fig.savefig(savename)
     plt.show()
 
 def export_plot(y, ylabel, title, filename):
     """ plot epochs. """
     fig, ax = plt.subplots(figsize=(10,8))
     times = np.arange(0, y.shape[0])
-    ys = np.mean(y, axis=1)
-    yerrs = stats.sem(y, axis=1)
+    ys = y.mean(axis = -1)
+    yerrs = y.std(axis = -1)/np.sqrt(y.shape[-1])
     ax.fill_between(times, ys - yerrs, ys + yerrs, alpha=0.25)
     ax.plot(times, ys)
     ax.set(xlabel='Training Episode',ylabel=ylabel)

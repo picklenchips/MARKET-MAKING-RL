@@ -11,17 +11,16 @@ class Market():
         self.W = wealth
         # update book later using self.init_book()
         self.book = OrderBook()
-        # --- market order parameters --- #
-        # assume environment only does market orders
-        # rate of market orders
+    # --- market order parameters --- #
+        # OLD
         # alpha is 1.53 for US stocks and 1.4 for NASDAQ stocks
         self.alpha = 1.53
         self.Lambda_b = 20  # average "volume" of market orders at each step
         self.Lambda_s = 20  
         self.K_b = 1  # as K increases, rate w delta decreases
         self.K_s = 1 
+        # NEW
         self.betas = (7.40417, -3.12017, 0.167814)  #ryan's new model
-        self.largest_order = 1000  # largest order size
         # action stuff
         self.sigma = config.sigma
         self.gamma = config.gamma 
@@ -32,26 +31,52 @@ class Market():
         self.b = 1  # how much we weigh dI
         self.discount = config.discount
 
-    def reset(self, mid=100, spread=10, nstocks=1000, nsteps=100, substeps=1, plot=False):
+    def reset(self, mid=100, spread=10, nstocks=1000, nsteps=1000, substeps=1, 
+              make_bell=True, plot=False):
         """ Randomly initialize order book """
         if self.book: del(self.book)
         self.book = OrderBook(mid)
         # start with symmetric spread
+        # JUST DO A BELL CURVE ON EACH SIDE
+        if make_bell:
+            for t in range(nsteps):
+                bid = np.random.normal(mid-spread/2, spread/3)
+                ask = np.random.normal(mid+spread/2, spread/3)
+                amount = np.random.poisson(5*nstocks/nsteps)
+                self.book.bid(amount, bid)
+                self.book.ask(amount, ask)
+            if plot:
+                self.book.plot()
+            return
+        # start with symmetric spread and market-step
         self.book.bid(nstocks//2, mid-spread/2)
         self.book.ask(nstocks//2, mid+spread/2)
-        if plot:
-            self.book.plot()
         for t in range(nsteps):
             # perform random MARKET ORDERS
+            old_book = self.book.copy()
+            old_state = self.state()
             dW, dI, mid = self.step(substeps)
-            state  = self.state()
-            if state[0] == 0 or state[2] == 0:
-                print("OOF: ",state)
             # perform random LIMIT ORDERS using naive action
-            self.act(state)
-            if plot:
-                print(state)
-                self.book.plot()
+            state = self.state()
+            if state[0] == 0 or state[2] == 0:
+                old_book.recalculate()
+                action = tuple(round(a,2) for a in action)
+                title = f"{t}:{action}: {old_state}->{state}"
+                old_book.plot(title)
+                break
+            old_book = self.book.copy()
+            old_state = self.state()
+            action = self.act(state)
+            if state[0] == 0 or state[2] == 0:
+                old_book.recalculate()
+                action = tuple(round(a,2) for a in action)
+                title = f"{t}:{action}: {old_state}->{state}"
+                old_book.plot(title)
+                break
+        self.book.plot()
+            
+    def is_empty(self):
+        return self.book.is_empty()
     
 # --- ENVIRONMENT / DYNAMICS --- #
 #TODO: implement the latest version of ryans thing 
@@ -106,12 +131,13 @@ class Market():
         except TypeError:  # resample state
             state = self.state()
         if len(state) == 4:  # default "naive" policy
+            rate = 3/4
             delta_b = self.book.delta_b; delta_a = self.book.delta_a
             n_bid, bid_price, n_ask, ask_price = state
             bid_price = np.random.normal(bid_price, delta_b/4)
             ask_price = np.random.normal(ask_price, delta_a/4)
-            n_bid = np.random.poisson(n_bid*3/4)
-            n_ask = np.random.poisson(n_ask*3/4) 
+            n_bid = np.random.poisson(n_bid*rate)
+            n_ask = np.random.poisson(n_ask*rate) 
             action = (n_bid, bid_price, n_ask, ask_price)
         elif len(state) == 3:  # avellaneda policy
             wealth, inventory, time_left = state
@@ -146,8 +172,10 @@ class Market():
         n_ask = round(n_ask)
         # LOB automatically only inserts price in cents so dw ab
         # bid_price = round(bid_price.item(), 2)
-        self.book.bid(n_bid, bid_price)
-        self.book.ask(n_ask, ask_price)
+        if n_bid:
+            self.book.bid(n_bid, bid_price)
+        if n_ask:
+            self.book.ask(n_ask, ask_price)
         #return n_bid, bid_price, n_ask, ask_price
 
 # --- REWARD FUNCTIONS --- #
@@ -173,7 +201,11 @@ class Market():
         return self.gamma * self.sigma**2 * time_left + 2*np.log(1+2*self.gamma/(self.alpha*(self.K_b+self.K_a)))/self.gamma
 
 
-# --- TESTING --- #
+# test market initialization 
+# yuh
+# 
+# uh 
+# oh ?
 if __name__ == "__main__":
     config = Config()
     M = Market(0, 0, config)

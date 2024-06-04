@@ -1,5 +1,5 @@
 """ Object-oriented configuration file """
-import os, math
+import os, math, pickle
 
 def to_TF(value): return "T" if value else "F"
 SAVEDIR = os.getcwd()+"/results"
@@ -10,7 +10,7 @@ class Config:
     def __init__(self, obs_dim=5, act_dim=4, n_layers=2, layer_size=10, 
                  lr=1e-3, discount=0.99, 
                  discrete=False, use_baseline=True, normalize_advantages=True, 
-                 eps_clip=0.2, do_clip = True, entropy_coef = 0.02, 
+                 do_ppo = True, eps_clip=0.2, do_clip = True, entropy_coef = 0.02, 
                  nbatch=100, nepoch=1000, nt=10000, dt=1e-3, max_t=0, 
                  gamma=1, sigma=1e-2, trajectory='MC',
                  update_freq=5) -> None:
@@ -23,6 +23,8 @@ class Config:
             self.lambd = 0.9 #? ? ? ?
             # set default values for TD?
             raise NotImplementedError
+        self.book_quit = True   # END EARLY IF BOOK IS INVALID
+
         self.obs_dim = obs_dim  # policy input
         self.act_dim = act_dim  # policy output
         self.rew_dim = 2        # reward additional info
@@ -51,6 +53,7 @@ class Config:
         self.normalize_advantages = normalize_advantages  # normalize advantages
         self.discount = discount          # discount for computing returns
         # PPO stuff
+        self.do_ppo = do_ppo
         self.eps_clip = eps_clip          # clip between 1-eps_clip and 1+eps_clip
         self.do_clip = do_clip            # whether to clip the ratio
         self.entropy_coef = entropy_coef  # PPO entropy coefficient
@@ -58,6 +61,7 @@ class Config:
         # savenames
     
     def set_name(self, epoch=None, make_new=False):
+        """ update the configuration name """
         name = f"{self.trajectory}_{self.ne}-{self.nb}-{self.nt}_{to_TF(self.discrete)}{to_TF(self.use_baseline)}{to_TF(self.normalize_advantages)}{to_TF(self.do_clip)}"
         # make new directory to store results
         L = len(name)
@@ -81,7 +85,24 @@ class Config:
         self.wim_plot   = self.out+'_wim.png'
         self.log_out    = self.save_dir+self.base_name+".log"
         return self.name, self.out
+    
+    def save(self, filename=None):
+        """ save a configuration to a filename"""
+        if not filename:
+            filename = self.out + "_config.pkl"
+        filehandler = open(filename, 'w')
+        pickle.dump(object, filehandler)
 
+    def load(self, filename=None):
+        """ load a configuration from a filename """
+        if not filename:
+            filename = self.out + "_config.pkl"
+        filehandler = open(filename, 'r')
+        return pickle.load(filehandler)
+
+#TODO: just store the .pkl of the configs instead of re-creating from the filename
+# bc with more complex configs, the filename will be a mess
+# so use config.load() yeah?
 def get_config(pathname: str) -> Config:
     """ Load a configuration from a filename """
     if "/" in pathname:

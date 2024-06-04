@@ -17,7 +17,7 @@ class OrderBook():
       - lowest ask tracked as (self.low_ask, self.nlow_ask)
     also stores an evolving self.midprice self.midprice, self.spread, self.delta_b, self.delta_a
     """
-    def __init__(self, baseline=100):
+    def __init__(self, baseline=100, n_to_add=100):
         # keep track of limit orders
         self.bids = []
         self.asks = []
@@ -38,6 +38,22 @@ class OrderBook():
         # ensure there are ALWAYS enough stocks to buy/sell stuff
         self.worst_bid = 0.01
         self.worst_ask = 100*baseline
+        self.n_to_add = n_to_add
+    
+    def copy(self):
+        """ Create a copy of the order book """
+        new_book = OrderBook(self.baseline, self.n_to_add)
+        new_book.bids = self.bids.copy()
+        new_book.asks = self.asks.copy()
+        new_book.midprice = self.midprice
+        new_book.spread = self.spread
+        new_book.delta_b = self.delta_b
+        new_book.delta_a = self.delta_a
+        return new_book
+    
+    def is_empty(self):
+        """ Check if there are either no bids or no asks """
+        return not (len(self.bids) and len(self.asks))
     
     def update_midprice(self):
         """ Update midprice of market """
@@ -51,8 +67,7 @@ class OrderBook():
         self.low_ask = self.high_bid = 0
         self.nlow_ask = self.nhigh_bid = 0
         if len(self.asks):
-            self.low_ask = self.asks[0][0]
-            self.nlow_ask = self.asks[0][1]
+            self.low_ask, self.nlow_ask = self.asks[0]
             if len(self.bids):
                 self.high_bid = -self.bids[0][0]; self.nhigh_bid = self.bids[0][1]
                 # symmetric midprice
@@ -61,118 +76,121 @@ class OrderBook():
                 while self.high_bid > self.midprice:
                     price, n = heapq.heappop(self.bids)
                     if len(self.bids) == 0:   # ran out of bids??
-                        self.bid(1, round(self.midprice,2)-0.01)
-                    self.high_bid = -self.bids[0][0]
+                        self.bid(self.n_to_add, round(self.midprice,2) - 0.01)
+                    self.high_bid, self.nhigh_bid = -self.bids[0][0], self.bids[0][1]
                 while self.low_ask < self.midprice:
                     price, n = heapq.heappop(self.asks)
                     if len(self.asks) == 0:  # ran out of asks??
-                        self.ask(1, round(self.midprice,2)+0.01)
-                    self.low_ask = self.asks[0][0]
+                        self.ask(self.n_to_add, round(self.midprice,2) + 0.01)
+                    self.low_ask, self.nlow_ask = self.asks[0]
                 self.spread = self.low_ask - self.high_bid
                 self.delta_b = self.midprice - self.high_bid
                 self.delta_a = self.low_ask - self.midprice
                 if self.spread < 0:
                     print("ERROR: unrealistic spread!!")
         elif len(self.bids):
-            self.high_bid = -self.bids[0][0]
-            self.nhigh_bid = self.bids[0][1]
+            self.high_bid, self.nhigh_bid = -self.bids[0][0], self.bids[0][1]
 
-    def buy(self, nstocks: int, maxprice=0.0):
-        """ Buy (up to) nstocks stocks to lowest-priced limit-sell (ask) orders
+    def buy(self, volume: int, maxprice=0.0):
+        """ Buy (up to) volume stocks to lowest-priced limit-sell (ask) orders
         returns tuple of int: num stocks bought,
                          list of (price, n_stocks) orders that have been bought
         optionally, only buy stocks valued below max price"""
         n_bought = total_bought = 0; do_update = False
         # bought = []
-        while nstocks > 0 and len(self.asks):
+        while volume > 0 and len(self.asks):
             if maxprice:  # only buy stocks less than max price
                 if self.asks[0][0] > maxprice: break
-            # buy up to nstocks stocks from the n available at this price
+            # buy up to volume stocks from the n available at this price
             price, n = heapq.heappop(self.asks)
-            n_bought_rn = min(n, nstocks)
+            n_bought_rn = min(n, volume)
             n_bought += n_bought_rn
             #bought.append((price, n_bought_rn))
             total_bought += price*n_bought_rn
             # place remaining portion of limit order back
-            if nstocks < n: 
-                heapq.heappush(self.asks, (price, n-nstocks))
+            if volume < n: 
+                heapq.heappush(self.asks, (price, n-volume))
             else: 
                 do_update = True
-            nstocks -= n
+            volume -= n
         # disencentivize running out of asks - you paid someone to buy your stock
-        if nstocks > 0 and not len(self.asks):
+        if volume > 0 and not len(self.asks):
             total_bought = -1
             n_bought     = 1
         if do_update: self.recalculate()
         return n_bought, total_bought
 
-    def sell(self, nstocks: int, minprice=0.0):
-        """Sell (up to) nstocks stocks to highest-priced limit-buy (bid) orders
+    def sell(self, volume: int, minprice=0.0):
+        """Sell (up to) volume stocks to highest-priced limit-buy (bid) orders
         optionally, only sell stocks valued above min price"""
         n_sold = total_sold = 0; do_update = False
         #sold = []  # keep track of orders sold
-        while nstocks > 0 and len(self.bids):
+        while volume > 0 and len(self.bids):
             if minprice:  # only sell stocks greater than min price
                 if -self.bids[0][0] < minprice: break
             price, n = heapq.heappop(self.bids)
             price = -price  # convert back to normal price
-            # sell up to nstocks stocks to the n available at this price
-            n_sold_rn = min(n, nstocks)
+            # sell up to volume stocks to the n available at this price
+            n_sold_rn = min(n, volume)
             n_sold += n_sold_rn
             #sold.append((price,n_sold_rn))
             total_sold += price*n_sold_rn
             # place remaining portion of limit order back
-            if nstocks < n: 
-                heapq.heappush(self.bids,(-price, n-nstocks))
+            if volume < n: 
+                heapq.heappush(self.bids,(-price, n-volume))
             else: 
                 do_update = True
-            nstocks -= n
+            volume -= n
         # disencentivize running out of bids - you paid someone and gave them your stock
-        if nstocks > 0 and not len(self.bids):
+        if volume > 0 and not len(self.bids):
             total_sold = -1
             n_sold     = 1
         if do_update: self.recalculate()
         return n_sold, total_sold
 
-    def bid(self, nstocks: int, price: float):
+    def bid(self, volume: int, price: float):
         """ Add a limit-buy order. Sorted highest-to-lowest """
         price = round(price, 2)  # can only buy/sell in cents
+        if volume == 0:
+            return
         # ALLOW AGENT TO WIDEN THE SPREAD by eating the book
-        if nstocks < 0:
-            nsold, sold = self.sell(-nstocks, minprice=price)
+        if volume < 0:
+            nsold, sold = self.sell(-volume, minprice=price)
             self.recalculate()
             return
         # buying higher than lowest sell -> market buy instead
         if len(self.asks):
             if price >= self.asks[0][0]:
-                nbought, bought = self.buy(nstocks, maxprice=price)
-                nstocks -= nbought
-                if nstocks == 0: return  # all eaten!
-        heapq.heappush(self.bids, (-price, nstocks))
+                nbought, bought = self.buy(volume, maxprice=price)
+                volume -= nbought
+                if volume == 0: return  # all eaten!
+        heapq.heappush(self.bids, (-price, volume))
         # is now highest buy order, recalculate
         if price == -self.bids[0][0]:
             self.recalculate()
 
-    def ask(self, nstocks: int, price: float):
+    def ask(self, volume: int, price: float):
         """ Add a limit-sell order """
         price = round(price, 2)  # can only buy/sell in cents
+        if volume == 0:
+            return
         # ALLOW AGENT TO WIDEN THE SPREAD by eating the book
-        if nstocks < 0:
-            nbought, bought = self.buy(-nstocks, maxprice=price)
+        if volume < 0:
+            nbought, bought = self.buy(-volume, maxprice=price)
             self.recalculate()
             return
         # selling lower than highest buy order -> sell some now!
         if len(self.bids):
             if price <= -self.bids[0][0]:
-                nsold, sold = self.sell(nstocks, minprice=price)
-                nstocks -= nsold
-                if nstocks == 0: return  # all eaten!
-        heapq.heappush(self.asks, (price, nstocks))
+                nsold, sold = self.sell(volume, minprice=price)
+                volume -= nsold
+                if volume == 0: return  # all eaten!
+        heapq.heappush(self.asks, (price, volume))
         # is now lowest sell order, recalculate
         if price == self.asks[0][0]:
             self.recalculate()
     
-    def plot(self):
+    def plot(self, title="Order Book"):
         """Make histogram of current limit-orders"""
         fig, ax = plt.subplots(figsize=FIGSIZE)
         ax.set(xlabel='Price per Share',ylabel='Volume')
@@ -196,11 +214,10 @@ class OrderBook():
         ax.hist([-b[0] for b in self.bids], weights = [b[1] for b in self.bids], bins=bbins,label='Bids',edgecolor='black',linewidth=0.5)
         ax.hist([s[0] for s in self.asks], weights = [s[1] for s in self.asks], bins=abins,label='Asks',edgecolor='black',linewidth=0.5)
         # set plotting stuff
-        title = "Order Book"
         if self.midprice:  # add dashed line for midprice
             lowy, highy = ax.get_ylim()
             ax.plot([self.midprice,self.midprice],[lowy,highy*0.8],linestyle='dashed',color='black')
-            title += f" - midprice = {uFormat(self.midprice,0)}, spread = ({uFormat(self.delta_b,0)}, {uFormat(self.delta_a,0)})"
+            title += f" [{round(self.midprice,2)}, ({uFormat(self.delta_b,0)}, {uFormat(self.delta_a,0)})]"
         plt.title(title)
         plt.legend(loc='upper center',ncol=2)
         plt.show()

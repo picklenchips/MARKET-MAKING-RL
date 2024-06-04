@@ -3,7 +3,7 @@ from config import Config
 import torch
 from base_market import Market
 from policy import PPO
-from util import np, get_logger, plot_WIM, export_plot
+from util import np, get_logger, plot_WIM, plot_WIM_2, export_plot
 from tqdm import tqdm
 import os
 
@@ -13,11 +13,176 @@ class MarketMaker:
         self.market = Market(inventory, wealth, config)
         self.logger = get_logger(config.log_out)
         self.P = PPO(config)
-        self.PPO = True
+        self.do_ppo = config.do_ppo
         self.config.use_baseline = True
         self.dt = config.dt; self.max_t = config.max_t
         self.nt = config.nt
         self.final_returns = []  # track returns during training
+        # ! ! ! ! ! ! difference between this and the uniform case
+        self.book_quit = config.book_quit  # quit if book is empty
+    
+    def get_paths(self, pbar, nt=None, nb=None, track_all=False) -> list[dict[list]]:
+        """ get trajectories and compute rewards, only observing immediate state
+        Inputs:
+            - self.config.nbatch = number of trajectories to sample
+            - track_all = also return (wealth, inventory, midprices)
+        Output: 
+            - paths: list of (nb) dictionaries each of list of (up to nt) steps
+                (tra, obs, act, rew)
+                if track_all: (tra, obs, act, rew, wea, inv, mid) 
+                if PPO, also outputs log probs of actions in ['old'] """
+        dt = self.dt
+        if not nt: 
+            nt = self.nt
+            T = self.max_t
+        else:
+            T = nt*dt
+        nbatch = nb if nb else self.config.nb
+
+        paths = []
+        for b in range(nbatch):
+            self.market.reset()
+            W = self.market.W; I = self.market.I
+            trajectories = []
+            observations = []
+            actions = []
+            rewards = []
+            if self.do_ppo: logprobs = []
+            if track_all:
+                wealth = []
+                inventory = []
+                midprices = []
+            # timestep
+            for t in range(nt):
+                time_left = (T - t*dt,)
+                state = self.market.state() + time_left
+                if self.do_ppo:  # need to get log probability directly
+                    action, logprob = self.P.policy.act(np.array(state), return_log_prob=True)
+                    self.market.submit(*action)
+                else:
+                    action = self.market.act(state, self.P.policy.act)
+                dW, dI, midprice = self.market.step()
+                if self.book_quit and self.market.is_empty():
+                    self.logger.info(f'Batch {b} step {t}: Book is empty, quitting trajectory')
+                    break   # quit if either bids or asks are empty
+                observations.append(state)
+                actions.append(action)
+                if self.do_ppo: logprobs.append(logprob)
+                reward_state = (dW, dI) + time_left
+                rewards.append(self.market.reward(reward_state))
+                trajectories.append(state + (dW, dI))
+                if track_all:
+                    W += dW; I += dI
+                    wealth.append(W)
+                    inventory.append(I)
+                    midprices.append(midprice)
+            rewards[-1] += self.market.final_reward(dW, I, self.market.book.midprice)
+            pbar.update(1)
+            path = {"tra": trajectories, "obs": observations, "act": actions, "rew": rewards}
+            if self.do_ppo:
+                path["old"] = logprobs
+            if track_all:
+                path["wea"] = wealth
+                path["inv"] = inventory
+                path["mid"] = midprices
+            paths.append(path)
+        return paths
+    
+    #TODO: implement TD lambda shits? gonna need a different config too IG
+
+    def train(self, plot_after=False):
+        """ Train number of epochs x nbatch things
+        - plot_after some # of epochs to show improvement? """
+        nbatch = self.config.nb
+        nepoch = self.config.ne - self.config.starting_epoch
+        with tqdm(total=nepoch*nbatch) as pbar:  # make local pbar instance
+            for epoch in range(self.config.starting_epoch, self.config.ne):
+                pbar.set_description(f"Epoch {epoch}",refresh=True)
+                #TODO: TD Lambda insertion here
+                if self.config.trajectory == 'MC':
+                    paths = self.get_paths(pbar, nbatch, track_all=plot_after)
+                else:
+                    raise NotImplementedError
+                #pbar.set_description(f"Updt {epoch}",refresh=True)
+                #pbar.set_postfix_str(f"Reward {rewards[b, -1]}", refresh=True)
+                if plot_after:
+                    if epoch + 1 % plot_after == 0:
+                        plot_WIM_2(paths, self.dt, title=f'epoch {epoch}', savename=self.config.out+'.png')
+                # combine all the trajectories into a single batch tensor
+                # size (batch_size **) x dim
+                returns, finals = self.P.get_uneven_returns(paths)
+                trajectories = np.concatenate([path['tra'] for path in paths])
+                observations = np.concatenate([path['obs'] for path in paths])
+                actions = np.concatenate([path['act'] for path in paths])
+                if self.do_ppo: logprobs = np.concatenate([path['old'] for path in paths])
+                advantages = self.P.get_advantages(returns, trajectories)
+                # first update will have old_logprobs = logprobs, so do 
+                # C steps of policy updates on the same trajectories
+                for C in range(self.config.update_freq):
+                    self.P.baseline.update_baseline(returns, trajectories)
+                    if self.do_ppo:
+                        self.P.update_policy(observations, actions, advantages, logprobs)
+                    else:
+                        self.P.update_policy(observations, actions, advantages)
+                # log the returns
+                self.final_returns.append(finals)
+                self.save(epoch+1)   # intermediately save the market maker for later loading
+        self.logger.info("DONZO BONZO!")
+        self.save(epoch+1)
+        self.plot()
+
+# --- SAVE / LOAD --- #
+    def plot(self):
+        """ plot final scores and final path """
+        finals = np.array(self.final_returns)
+        print(finals.shape)
+        export_plot(finals,"Scores",self.config.name,self.config.scores_plot)
+        with tqdm(total=100) as pbar:
+            path = self.get_paths(pbar, nb=100, track_all=True)
+            if self.book_quit:
+                plot_WIM_2(path, self.dt, title=f'Final Path (100 batches) {self.config.name}', savename=self.config.wim_plot)
+            else:
+                plot_WIM(path['wea'], path['inv'], path['mid'], self.dt, title=f'Final Path (100 batches) {self.config.name}', savename=self.config.wim_plot)
+
+    def save(self, epoch):
+        """ Save a trained market maker model """
+        old_out = self.config.out
+        name, out = self.config.set_name(epoch)
+        save_msg = f"[EPOCH {epoch}] Saved "
+        if self.config.use_baseline:
+            if os.path.exists(old_out+"_val.pth"): 
+                os.remove(old_out+"_val.pth")
+            torch.save(self.P.baseline.network.state_dict(), out+"_val.pth")
+            save_msg += "baseline network, "
+        if os.path.exists(old_out+"_pol.pth"):
+            os.remove(old_out+"_pol.pth")
+        torch.save(self.P.policy.state_dict(), out+"_pol.pth")
+        save_msg += "policy network, "
+        if os.path.exists(old_out+"_scores.npy"): 
+            os.remove(old_out+"_scores.npy")
+        np.save(self.config.scores_out, np.array(self.final_returns))
+        save_msg += f"final returns to {name} :)"
+        self.logger.info(save_msg)
+
+    def load(self):
+        """ Return a trained market maker model from same config """
+        name = self.config.out
+        if not os.path.exists(name+"_pol.pth"):
+            raise FileNotFoundError(f"Model {name} not found")
+        if self.config.use_baseline:
+            self.P.baseline.network.load_state_dict(torch.load(name+"_val.pth"))
+            print(f"Loaded baseline network from {name}_val.pth")
+        self.P.policy.load_state_dict(torch.load(name+"_pol.pth"))
+        print(f"Loaded policy network from {name}_pol.pth")
+        print(self.config.scores_out)
+        self.final_returns = np.load(self.config.scores_out)
+
+
+class UniformMarketMaker(MarketMaker):
+    """ a market maker with uniform time steps for all trajectories """
+    def __init__(self, config: Config, inventory=0, wealth=0) -> None:
+        super().__init__(config, inventory, wealth)
+        self.P = PPO(config)
     
     def get_paths(self, pbar, nt=None, nb=None, track_all=False):
         """ get trajectories and compute rewards, only observing immediate state
@@ -37,7 +202,7 @@ class MarketMaker:
         val_dim = self.config.val_dim
         obs_dim = self.config.obs_dim
         act_dim = self.config.act_dim
-
+        
         trajectories = np.empty((nbatch, nt, val_dim))
         actions = np.empty((nbatch, nt, act_dim))
         rewards = np.empty((nbatch, nt))
@@ -101,7 +266,7 @@ class MarketMaker:
                 #pbar.set_postfix_str(f"Reward {rewards[b, -1]}", refresh=True)
                 if plot_after:
                     if epoch + 1 % plot_after == 0:
-                        plot_WIM(paths['wea'], paths['inv'], paths['mid'], title=f'epoch {epoch}', savename=self.config.out+'.png')
+                        plot_WIM(paths['wea'], paths['inv'], paths['mid'], self.dt, title=f'epoch {epoch}', savename=self.config.out+'.png')
                 returns = self.P.get_returns(paths['rew'])
                 advantages = self.P.get_advantages(returns, paths['tra'])
                 # first update will have old_logprobs = logprobs, so do 
@@ -115,46 +280,3 @@ class MarketMaker:
         self.logger.info("DONZO BONZO!")
         self.save(epoch+1)
         self.plot()
-
-# --- SAVE / LOAD --- #
-    def plot(self):
-        """ plot final scores and final path """
-        finals = np.array(self.final_returns)
-        print(finals.shape)
-        export_plot(finals,"Scores",self.config.name,self.config.scores_plot)
-        with tqdm(total=100) as pbar:
-            path = self.get_paths(pbar, nb=100, track_all=True)
-            plot_WIM(path['wea'], path['inv'], path['mid'], self.config.dt, title=f'Final Path (100 batches) {self.config.name}', savename=self.config.wim_plot)
-
-    def save(self, epoch):
-        """ Save a trained market maker model """
-        old_out = self.config.out
-        name, out = self.config.set_name(epoch)
-        save_msg = f"[EPOCH {epoch}] Saved "
-        if self.config.use_baseline:
-            if os.path.exists(old_out+"_val.pth"): 
-                os.remove(old_out+"_val.pth")
-            torch.save(self.P.baseline.network.state_dict(), out+"_val.pth")
-            save_msg += "baseline network, "
-        if os.path.exists(old_out+"_pol.pth"): 
-            os.remove(old_out+"_pol.pth")
-        torch.save(self.P.policy.state_dict(), out+"_pol.pth")
-        save_msg += "policy network, "
-        if os.path.exists(old_out+"_scores.npy"): 
-            os.remove(old_out+"_scores.npy")
-        np.save(self.config.scores_out, np.array(self.final_returns))
-        save_msg += f"final returns to {name} :)"
-        self.logger.info(save_msg)
-
-    def load(self):
-        """ Return a trained market maker model from same config """
-        name = self.config.out
-        if not os.path.exists(name+"_pol.pth"):
-            raise FileNotFoundError(f"Model {name} not found")
-        if self.config.use_baseline:
-            self.P.baseline.network.load_state_dict(torch.load(name+"_val.pth"))
-            print(f"Loaded baseline network from {name}_val.pth")
-        self.P.policy.load_state_dict(torch.load(name+"_pol.pth"))
-        print(f"Loaded policy network from {name}_pol.pth")
-        print(self.config.scores_out)
-        self.final_returns = np.load(self.config.scores_out)

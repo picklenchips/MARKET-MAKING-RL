@@ -7,6 +7,7 @@ from config import Config
 class Market():
     """ Market environment """
     def __init__(self, inventory: int, wealth: float, config: Config):
+        self.config = config
         self.I = inventory
         self.W = wealth
         # update book later using self.init_book()
@@ -26,11 +27,12 @@ class Market():
         self.max_t = config.max_t  # second
         self.dt    = config.dt   # millisecond
         # reward stuff
-        self.a = 1  # how much we weigh dW
-        self.b = 1  # how much we weigh dI
+        self.a = 0.01  # how much we weigh dW
+        self.b = 0.1  # how much we weigh dI
+        self.c = 1   # how much we negatively weigh time
         self.discount = config.discount
 
-    def reset(self, mid=100, spread=10, nstocks=1000, nsteps=1000, substeps=1, 
+    def reset(self, mid=100, spread=10, nstocks=10000, nsteps=1000, substeps=1, 
               make_bell=True, plot=False):
         """ Randomly initialize order book """
         if self.book: del(self.book)
@@ -191,10 +193,12 @@ class Market():
         # dW, dI, time_left = reward_state
         if isinstance(r_state, tuple):
             r_state = np.array(r_state)
+        if self.config.subtract_time:
+            return self.a*r_state[...,0] + np.exp(-self.b*r_state[...,2]) * np.sign(r_state[...,1]) - self.c*r_state[...,2]
         return self.a*r_state[...,0] + np.exp(-self.b*r_state[...,2]) * np.sign(r_state[...,1])
     
-    def final_reward(self, dW, inventory, midprice):
-        return dW + inventory*midprice
+    def final_reward(self, W, inventory, midprice):
+        return W + inventory*midprice
 
     def reservation_price(self, midprice, inventory, t_left):  # reservation / indifference price
         return midprice - inventory * self.gamma * self.sigma**2 * t_left

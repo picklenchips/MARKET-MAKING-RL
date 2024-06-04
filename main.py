@@ -63,5 +63,5 @@ if __name__ == "__main__":
         MM.plot()
     else:  # do training
         print(f"Training {config.name}")
-        MM.train()
+        MM.train(plot_after=100)
         print(f"Training done! Saved to {config.name}")

@@ -53,6 +53,7 @@ class MarketMaker:
                 inventory = []
                 midprices = []
             # timestep
+            terminated = False
             for t in range(nt):
                 time_left = (T - t*dt,)
                 state = self.market.state() + time_left
@@ -64,6 +65,7 @@ class MarketMaker:
                 dW, dI, midprice = self.market.step()
                 if self.book_quit and self.market.is_empty():
                     self.logger.info(f'Batch {b} step {t}: Book is empty, quitting trajectory')
+                    terminated = True
                     break   # quit if either bids or asks are empty
                 observations.append(state)
                 actions.append(action)
@@ -76,7 +78,8 @@ class MarketMaker:
                     wealth.append(W)
                     inventory.append(I)
                     midprices.append(midprice)
-            rewards[-1] += self.market.final_reward(dW, I, self.market.book.midprice)
+            if not terminated:
+                rewards[-1] += self.market.final_reward(W, I, self.market.book.midprice)
             pbar.update(1)
             path = {"tra": trajectories, "obs": observations, "act": actions, "rew": rewards}
             if self.do_ppo:
@@ -87,16 +90,6 @@ class MarketMaker:
                 path["mid"] = midprices
             paths.append(path)
         return paths
-    
-    def get_td_lambda_returns(self, rewards, values, nt, nbatch):
-        """ Compute (uneven) TD(λ) returns """
-        td_lambda_returns = np.zeros_like(rewards)
-        for b in range(nbatch):
-            G = rewards[b, -1] + self.config.discount * values[b, -1]
-            for t in reversed(range(nt-1)):
-                G = rewards[b, t] + self.config.discount * ((1 - self.config.lambd) * values[b, t+1] + self.config.lambd * G)
-                td_lambda_returns[b, t] = G
-        return td_lambda_returns
 
     def train(self, plot_after=False):
         """ Train number of epochs x nbatch things
@@ -246,7 +239,7 @@ class UniformMarketMaker(MarketMaker):
                     wealth[b, t] = W
                     inventory[b, t] = I
                     midprices[b, t] = midprice
-            rewards[b, t] += self.market.final_reward(dW, I, self.market.book.midprice)
+            rewards[b, t] += self.market.final_reward(W, I, self.market.book.midprice)
             pbar.update(1)
         observations = trajectories[...,:obs_dim]
         paths = {"tra": trajectories, "obs": observations, "act": actions, "rew": rewards}
@@ -268,13 +261,12 @@ class UniformMarketMaker(MarketMaker):
                 pbar.set_description(f"Epoch {epoch}", refresh=True)
                 
                 # Get paths and returns based on trajectory type
+                paths = self.get_paths(pbar, nb=nbatch, track_all=plot_after)
                 if self.config.trajectory == 'MC':
-                    paths = self.get_paths(pbar, nb=nbatch, track_all=plot_after)
                     returns = self.P.get_returns(paths['rew'])
                 elif self.config.trajectory == 'TD':
-                    paths = self.get_paths(pbar, nb=nbatch, track_all=plot_after)
                     values = self.P.baseline.network(np2torch(paths['tra'])).detach().cpu().numpy()
-                    returns = self.get_td_lambda_returns(paths['rew'], values, self.nt, nbatch)
+                    returns = self.P.get_td_returns(paths['rew'], values, self.nt, nbatch)
                 else:
                     raise NotImplementedError("Trajectory type not supported")
                 #pbar.set_description(f"Updt {epoch}",refresh=True)

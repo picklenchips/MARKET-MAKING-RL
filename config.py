@@ -8,7 +8,7 @@ if not os.path.exists(SAVEDIR):
 
 class Config:
     def __init__(self, obs_dim=5, act_dim=4, n_layers=2, layer_size=10, 
-                 lr=1e-3, discount=0.99, 
+                 lr=1e-3, discount=0.99, subtract_time=False,
                  discrete=False, use_baseline=True, normalize_advantages=True, 
                  do_ppo = True, eps_clip=0.2, do_clip = True, entropy_coef = 0.02, 
                  nbatch=100, nepoch=1000, nt=10000, dt=1e-3, max_t=0, 
@@ -49,6 +49,7 @@ class Config:
         self.use_baseline = use_baseline  # use baseline network to compute actual advantages
         self.normalize_advantages = normalize_advantages  # normalize advantages
         self.discount = discount          # discount for computing returns
+        self.subtract_time = subtract_time  # subtract time from immediate reward
         # PPO stuff
         self.do_ppo = do_ppo
         self.eps_clip = eps_clip          # clip between 1-eps_clip and 1+eps_clip
@@ -59,7 +60,7 @@ class Config:
     
     def set_name(self, epoch=None, make_new=False):
         """ update the configuration name """
-        name = f"{self.trajectory}_{self.ne}-{self.nb}-{self.nt}_{to_TF(self.discrete)}{to_TF(self.use_baseline)}{to_TF(self.normalize_advantages)}{to_TF(self.do_clip)}"
+        name = f"{self.trajectory}_{self.ne}-{self.nb}-{self.nt}_{to_TF(self.discrete)}{to_TF(self.use_baseline)}{to_TF(self.normalize_advantages)}{to_TF(self.do_clip)}{to_TF(self.subtract_time)}"
         # make new directory to store results
         L = len(name)
         i = 0  # duplicate models?
@@ -115,5 +116,6 @@ def get_config(pathname: str) -> Config:
     config.use_baseline = parts[2][1] == "T"
     config.normalize_advantages = parts[2][2] == "T"
     config.do_clip = parts[2][3] == "T"
+    config.subtract_time = parts[2][4] == "T"
     config.set_name(config.starting_epoch)
     return config

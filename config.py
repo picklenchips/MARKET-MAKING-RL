@@ -108,8 +108,10 @@ class Config:
         with open(filename, 'rb') as f:
             config = pickle.load(f)
         dirabove = '/'.join(filename.split('/')[:-1])
-        policypath = glob(dirabove+"/*_pol.pth")[-1]
-        config.starting_epoch = int(policypath.split("/")[-1].split("_")[0])
+        policypath = glob(dirabove+"/*_pol.pth")
+        if len(policypath):
+            policypath = policypath[0]
+            config.starting_epoch = int(policypath.split("/")[-1].split("_")[0])
         config.set_name(config.starting_epoch)
         return config
     

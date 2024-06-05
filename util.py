@@ -30,7 +30,7 @@ np.set_printoptions(precision=4)
 
 
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-def np2torch(x, cast_double_to_float=True):
+def np2torch(x, requires_grad=False, cast_double_to_float=True):
     #mask = 0
     #if isinstance(x, np.ma.masked_array):
     #    mask = torch.from_numpy(x.mask).to(device)
@@ -40,6 +40,8 @@ def np2torch(x, cast_double_to_float=True):
         x = torch.Tensor(x).to(device)
     if cast_double_to_float and x.dtype == torch.float64:
         x = x.float()  # cast double to float
+    if requires_grad:
+        x.requires_grad = True
     return x
 
 def build_mlp(input_size, output_size, n_layers, hidden_size, activation=nn.ReLU()):

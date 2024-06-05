@@ -227,12 +227,20 @@ class OrderBook():
                 title += f" [{round(self.midprice,2)}, ({uFormat(self.delta_b,0)}, {uFormat(self.delta_a,0)})]"
         if not isinstance(market_order, bool):  # plot market orders
             # market_order = (-n_bid, bid, -n_ask, ask)
-            ax.hist([market_order[1]], weights = [-market_order[0]], bins = bbins, edgecolor='black', linewidth=1, color=f'C{3}')  # purple for bid-hitting
-            ax.hist([market_order[3]], weights = [-market_order[2]], bins = abins, edgecolor='black', linewidth=1, color=f'C{2}')  # orange for ask-lifting
+            if market_order[0]:
+                width = brange/bbins
+                ax.hist([market_order[1]], weights = [-market_order[0]], bins = [market_order[1]-width/2,market_order[1]+width/2], edgecolor='black', linewidth=1, color=f'C{3}')  # purple for bid-hitting
+            if market_order[2]:
+                width = arange/abins
+                ax.hist([market_order[3]], weights = [-market_order[2]], bins = [market_order[3]-width/2,market_order[3]+width/2], edgecolor='black', linewidth=1, color=f'C{2}')  # orange for ask-lifting
         if not isinstance(limit_order, bool):  # agent action
             # limit_order = (n_bid, bid, n_ask, ask)
-            ax.hist([limit_order[1]], weights = [limit_order[0]], bins = bbins, edgecolor='black', linewidth=1, color=f'C{3}')
-            ax.hist([limit_order[3]], weights = [limit_order[2]], bins = abins, edgecolor='black', linewidth=1, color=f'C{2}')
+            if limit_order[0]:
+                width = brange/bbins
+                ax.hist([limit_order[1]], weights = [limit_order[0]], bins = [market_order[1]-width/2,market_order[1]+width/2], edgecolor='black', linewidth=1, color=f'C{3}')
+            if limit_order[2]:
+                width = arange/abins
+                ax.hist([limit_order[3]], weights = [limit_order[2]], bins = [market_order[3]-width/2,market_order[3]+width/2], edgecolor='black', linewidth=1, color=f'C{2}')
         plt.title(title)
         plt.legend(loc='upper center',ncol=2)
         plt.show(block=False)

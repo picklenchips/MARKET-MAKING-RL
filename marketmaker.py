@@ -2,7 +2,7 @@ import numpy as np
 from config import Config
 import torch
 from base_market import Market
-from policy import PPO
+from policy import PPO, PolicyGradient
 from util import np, get_logger, plot_WIM, plot_WIM_2, export_plot, np2torch
 from tqdm import tqdm
 import os
@@ -15,9 +15,9 @@ class MarketMaker:
         self.market = Market(inventory, wealth, config)
         self.logger = get_logger(config.log_out)
         self.logger.info(self.config)
-        self.P = PPO(config)
         self.do_ppo = config.do_ppo
-        self.config.use_baseline = True
+        self.P = PPO(config) if self.do_ppo else PolicyGradient(config)
+        self.P.init_policy(self.market,0,0)
         self.dt = config.dt; self.max_t = config.max_t
         self.nt = config.nt
         self.final_returns = []  # track returns during training
@@ -44,6 +44,7 @@ class MarketMaker:
         nbatch = nb if nb else self.config.nb
 
         paths = []
+        avg_timestep = 0
         for b in range(nbatch):
             self.market.reset()
             W = self.market.W; I = self.market.I
@@ -68,7 +69,7 @@ class MarketMaker:
                     action = self.market.act(state, self.P.policy.act)
                 dW, dI, midprice = self.market.step()
                 if self.book_quit and self.market.is_empty():
-                    self.logger.info(f'Batch {b} step {t}: Book is empty, quitting trajectory')
+                    #self.logger.info(f'Batch {b} step {t}: Book is empty, quitting trajectory')
                     terminated = True
                     break   # quit if either bids or asks are empty
                 observations.append(state)
@@ -82,6 +83,7 @@ class MarketMaker:
                     wealth.append(W)
                     inventory.append(I)
                     midprices.append(midprice)
+            avg_timestep += t
             if not terminated:
                 rewards[-1] += self.market.final_reward(W, I, self.market.book.midprice)
             pbar.update(1)
@@ -93,6 +95,8 @@ class MarketMaker:
                 path["inv"] = inventory
                 path["mid"] = midprices
             paths.append(path)
+        avg_timestep /= nbatch
+        self.logger.info(f"Average trajectory length: {avg_timestep}")
         return paths
 
     def train(self, plot_after=False):
@@ -140,7 +144,7 @@ class MarketMaker:
         self.plot()
 
 # --- PLOT --- #
-    def plot_book_path(self, nt=0) -> None:
+    def plot_book_path(self, nt=0, wait_time=1) -> None:
         """ plot the LOB for a single trajectory """
         dt = self.dt
         if not nt: 
@@ -156,12 +160,16 @@ class MarketMaker:
                 time_left = (T - t*dt,)
                 state = self.market.state() + time_left
                 old_book = self.market.book.copy()
-                limit_act = self.market.act(state, self.P.policy.act)
+                # actions have been changed to deltas
+                limit_act = list(self.market.act(state, self.P.policy.act))
+                limit_act[1] = old_book.midprice - limit_act[1]
+                limit_act[3] = old_book.midprice + limit_act[3]
                 dW, dI, midprice, market_act = self.market.step(plot=True)
-                title = f'{round(t*dt,3)}: ({W} + {dW}, {I} + {dI}, {W+I*old_book.midprice} + {dW+dI*midprice})'
+                title = f'{round(t*dt,3)}: ({round(W)} + {round(dW,2)}, {round(I)} + {round(dI)}, {round(W+I*old_book.midprice)} + {round(dW+dI*midprice)})'
+                title = f"{', '.join(map(lambda x: str(round(x,2)), state))} -> {', '.join(map(lambda x: str(round(x,2)), limit_act))}"
                 if self.book_quit and self.market.is_empty():
                     title += '\n!!! EMPTY !!!'
-                old_book.plot(title=title, market_order=market_act, limit_order=limit_act)
+                old_book.plot(wait_time=wait_time, title=title, market_order=market_act, limit_order=limit_act)
                 if title[-3:] == '!!!':
                     print(f'Book emptied on {t}!')
                     break
@@ -327,3 +335,22 @@ class UniformMarketMaker(MarketMaker):
         self.logger.info("Training complete!")  # DONZO BONZO
         self.save(epoch + 1, True)
         self.plot()
+
+
+if __name__ == "__main__":
+    config = Config()
+    config.set_name(0, make_new=True)
+    print(f'loaded config {config.name}')
+    MM = MarketMaker(config)
+    #print(MM.P.policy.state_dict())
+    MM.P.init_policy(MM.market,ne=1000,nb=100,start_dict=False)
+    out = config.out
+    if os.path.exists(config.out+"_init-pol.pth"):
+        os.remove(config.out+"_init-pol.pth")
+    torch.save(MM.P.policy.state_dict(), config.out+"_init-pol.pth")
+    print(f'saved policy to {config.out}_init-pol.pth')
+    while 1:
+        t = input('plot book path by pressing enter')
+        if t: break
+        MM.plot_book_path(nt=1000, wait_time=0.5)
+    

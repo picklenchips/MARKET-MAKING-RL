@@ -13,7 +13,7 @@ if not os.path.exists(SAVEDIR):
     os.mkdir(SAVEDIR)
 
 class Config:
-    def __init__(self, obs_dim=5, act_dim=4, rew_dim=2, n_layers=4, layer_size=10, 
+    def __init__(self, obs_dim=5, act_dim=4, rew_dim=2, n_layers=2, layer_size=10, 
                  lr=1e-3, discount=0.99, subtract_time=False, immediate_reward=False,
                  discrete=False, use_baseline=True, normalize_advantages=True, 
                  do_ppo = True, eps_clip=0.2, do_clip = True, entropy_coef = 0.02, 

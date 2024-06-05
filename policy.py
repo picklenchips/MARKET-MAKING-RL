@@ -3,8 +3,11 @@ import torch.nn as nn
 import torch.distributions as ptd
 import numpy as np
 from config import Config
-import logging
+import logging, os
 from util import np2torch, build_mlp, normalize
+from base_market import Market
+from tqdm import tqdm
+from collections import OrderedDict
 
 
 class BasePolicy:
@@ -52,10 +55,7 @@ class GaussianPolicy(BasePolicy, nn.Module):
 
     def action_distribution(self, observations):
         """ continuous action distribution for given observations """
-        means = self.network(observations)
-        stds = torch.diag(self.std())
-        thing = ptd.MultivariateNormal(means, scale_tril=stds)
-        return thing
+        return ptd.MultivariateNormal(self.network(observations), scale_tril=torch.diag(self.std()))
 
 
 ##########################################
@@ -79,8 +79,8 @@ class BaselineNetwork(nn.Module):
 
     def update_baseline(self, returns, observations):
         """ Gradient baseline to match returns """
-        returns = np2torch(returns)
-        observations = np2torch(observations)
+        returns = np2torch(returns, True)
+        observations = np2torch(observations, True)
         baseline = self.forward(observations)
         self.optimizer.zero_grad()
         loss = torch.mean((baseline - returns)**2)
@@ -101,15 +101,67 @@ class PolicyGradient():
         """
         self.config = config
         self.discount = config.discount
-        self.init_policy()
         # set the baseline (value) network (val_dim -> 1)
         if config.use_baseline:
             self.baseline = BaselineNetwork(config)
 
-    def init_policy(self):
-        """ Initialize self.policy network """
+    def start_dict(self):
+        """ map obs_dim straight to act_dim linearly """
+        act_dim = self.config.act_dim
+        obs_dim = self.config.obs_dim
+        n_layers = self.config.n_layers
+        layer_size = self.config.layer_size
+        inp = torch.randn((layer_size, obs_dim))/10
+        inp.fill_diagonal_(1)
+        inp_bias = torch.randn((layer_size))/10
+        layers = [('log_std', torch.zeros(act_dim)),('network.0.weight', inp),(f'network.0.bias', inp_bias)]
+        for i in range(n_layers-1):
+            middle = torch.randn((layer_size, layer_size))/10
+            middle.fill_diagonal_(1)
+            mid_bias = torch.randn((layer_size))/10
+            layers.append((f"network.{2*(i+1)}.weight", middle))
+            layers.append((f"network.{2*(i+1)}.bias", mid_bias))
+        output = torch.randn((act_dim, layer_size))/10
+        output.fill_diagonal_(1)
+        out_bias = torch.randn((act_dim))/10
+        layers.append((f'network.{2*n_layers}.weight', output))
+        layers.append((f'network.{2*n_layers}.bias', out_bias))
+        return OrderedDict(layers)
+
+    def init_policy(self, market: Market, ne=1000,nb=100, start_dict=False):
+        """ Initialize self.policy network to match intial market """
         network = build_mlp(self.config.obs_dim, self.config.act_dim, self.config.n_layers, self.config.layer_size)
         self.policy = CategoricalPolicy(network) if self.config.discrete else GaussianPolicy(network, self.config.act_dim)
+        self.optimizer = torch.optim.Adam(params=self.policy.parameters(),lr=0.02)
+        # load previous policy
+        if os.path.exists(self.config.out+"_init-pol.pth"):
+            self.policy.load_state_dict(torch.load(self.config.out+"_init-pol.pth"))
+            print(f'initialized policy from {self.config.out}_init-pol.pth')
+            self.optimizer = torch.optim.Adam(params=self.policy.parameters(),lr=self.config.lr)
+            return
+        # INITIALIZE POLICY TO MATCH FIRST OBSERVED STATE
+        state_dict = self.start_dict()
+        if start_dict:
+            self.policy.load_state_dict(state_dict)
+        save_after = ne/20
+        with tqdm(total=ne) as pbar:
+            pbar.set_description("Initializing Policy")
+            for i in range(ne):
+                states = []; actions = []
+                states = np.empty((nb, self.config.obs_dim))
+                actions = np.empty((nb, self.config.act_dim))
+                for b in range(nb):
+                    market.reset()
+                    state = market.state()
+                    states[b] = state + (self.config.max_t,)
+                    #action = market.act(state)
+                    actions[b] = state
+                self.match(states, actions)
+                if (i+1) % save_after == 0:
+                    if os.path.exists(self.config.out+"_init-pol.pth"):
+                        os.remove(self.config.out+"_init-pol.pth")
+                    torch.save(self.policy.state_dict(), self.config.out+"_init-pol.pth")
+                pbar.update(1)
         self.optimizer = torch.optim.Adam(params=self.policy.parameters(),lr=self.config.lr)
 
     def get_returns(self, rewards: np.ndarray):
@@ -187,9 +239,9 @@ class PolicyGradient():
                 [batch size] (and integer type) if discrete
             advantages: np.array of shape [batch size]
         """
-        observations = np2torch(observations)
-        actions = np2torch(actions)
-        advantages = np2torch(advantages)
+        observations = np2torch(observations, True)
+        actions = np2torch(actions, True)
+        advantages = np2torch(advantages, True)
         distribution = self.policy.action_distribution(observations)
         log_probs = distribution.log_prob(actions)
         self.optimizer.zero_grad()
@@ -197,9 +249,20 @@ class PolicyGradient():
         loss.backward()
         self.optimizer.step()
 
+    def match(self, observations, actions):
+        """ train actions to match observations """
+        observations = np2torch(observations, requires_grad = True)
+        actions = np2torch(actions, requires_grad = True)
+        distribution = self.policy.action_distribution(observations)
+        curr_actions = distribution.sample()
+        loss = torch.mean((curr_actions - actions)**2)
+        self.optimizer.zero_grad()
+        loss.backward()
+        self.optimizer.step()
+
 
 class PPO(PolicyGradient):
-    def __init__(self,config: Config):
+    def __init__(self, config: Config):
         config.use_baseline = True
         super().__init__(config)
         self.eps_clip = self.config.eps_clip
@@ -216,10 +279,10 @@ class PPO(PolicyGradient):
             advantages: np.array of shape [batch size, 1]
             old_logprobs: np.array of shape [batch size]
         """
-        observations = np2torch(observations)
-        actions      = np2torch(actions)
-        advantages   = np2torch(advantages)
-        old_logprobs = np2torch(old_logprobs)
+        observations = np2torch(observations, True)
+        actions      = np2torch(actions, True)
+        advantages   = np2torch(advantages, True)
+        old_logprobs = np2torch(old_logprobs, True)
         
         distribution = self.policy.action_distribution(observations)
         log_probs    = distribution.log_prob(actions)
@@ -234,11 +297,3 @@ class PPO(PolicyGradient):
         loss         = -torch.mean(minimum) - torch.mean(self.entropy_coef * entropy_loss)
         loss.backward()
         self.optimizer.step()
-
-if __name__ == "__main__":
-    print('loading config')
-    config = Config()
-    print('loading PPO')
-    PPO = PPO(config)
-    observations = np.random.rand(100, config.obs_dim)
-    actions = PPO.policy.act(observations)

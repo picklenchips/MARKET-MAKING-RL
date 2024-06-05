@@ -2,7 +2,7 @@ import torch
 import torch.nn as nn
 import torch.distributions as ptd
 import numpy as np
-from config import Config
+from config import Config, INITSAVE
 import logging, os
 from util import np2torch, build_mlp, normalize
 from base_market import Market
@@ -128,15 +128,15 @@ class PolicyGradient():
         layers.append((f'network.{2*n_layers}.bias', out_bias))
         return OrderedDict(layers)
 
-    def init_policy(self, market: Market, ne=1000,nb=100, start_dict=False):
+    def init_policy(self, market: Market, ne=1000,nb=100, start_dict=True):
         """ Initialize self.policy network to match intial market """
         network = build_mlp(self.config.obs_dim, self.config.act_dim, self.config.n_layers, self.config.layer_size)
         self.policy = CategoricalPolicy(network) if self.config.discrete else GaussianPolicy(network, self.config.act_dim)
         self.optimizer = torch.optim.Adam(params=self.policy.parameters(),lr=0.02)
-        # load previous policy
-        if os.path.exists(self.config.out+"_init-pol.pth"):
-            self.policy.load_state_dict(torch.load(self.config.out+"_init-pol.pth"))
-            print(f'initialized policy from {self.config.out}_init-pol.pth')
+        # load previous policy if it exists
+        if os.path.exists(self.config.network_out):
+            self.policy.load_state_dict(torch.load(self.config.network_out))
+            print(f'initialized policy from {self.config.network_out}')
             self.optimizer = torch.optim.Adam(params=self.policy.parameters(),lr=self.config.lr)
             return
         # INITIALIZE POLICY TO MATCH FIRST OBSERVED STATE

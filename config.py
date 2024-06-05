@@ -11,12 +11,15 @@ full_TF = lambda value, label: "no-"+label if not value else label
 SAVEDIR = os.getcwd()+"/results"
 if not os.path.exists(SAVEDIR):
     os.mkdir(SAVEDIR)
+INITSAVE = os.getcwd() +"/init_policies"
+if not os.path.exists(INITSAVE):
+    os.mkdir(INITSAVE)
 
 class Config:
     def __init__(self, obs_dim=5, act_dim=4, rew_dim=2, n_layers=2, layer_size=10, 
                  lr=1e-3, discount=0.99, subtract_time=False, immediate_reward=False,
                  discrete=False, use_baseline=True, normalize_advantages=True, 
-                 do_ppo = True, eps_clip=0.2, do_clip = True, entropy_coef = 0.02, 
+                 do_ppo = True, eps_clip=0.2, do_clip = True, entropy_coef = 0.00, 
                  nbatch=100, nepoch=1000, nt=10000, dt=1e-3, max_t=0, 
                  gamma=1, sigma=1e-2, trajectory='MC', past_obs=2,
                  update_freq=5, lambd=0.9, save_config=False) -> None:
@@ -26,10 +29,11 @@ class Config:
         self.past_obs = past_obs  # number of past observations to include
         self.obs_dim = obs_dim  # policy input
         self.act_dim = act_dim  # policy output
-        self.rew_dim = 2        # reward additional info
+        self.rew_dim = rew_dim   # reward additional info
         self.val_dim = self.rew_dim + self.obs_dim  # baseline network input
         self.n_layers = n_layers
         self.layer_size = layer_size
+        self.network_out = INITSAVE+"/"+"-".join(map(str, [self.obs_dim, self.act_dim, self.n_layers, self.layer_size]))+"_init-pol.pth"
 
         self.lr = lr
         self.discrete = discrete

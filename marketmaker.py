@@ -17,7 +17,7 @@ class MarketMaker:
         self.logger.info(self.config)
         self.do_ppo = config.do_ppo
         self.P = PPO(config) if self.do_ppo else PolicyGradient(config)
-        self.P.init_policy(self.market,0,0)
+        self.P.init_policy(self.market)
         self.dt = config.dt; self.max_t = config.max_t
         self.nt = config.nt
         self.final_returns = []  # track returns during training

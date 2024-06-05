@@ -1,13 +1,13 @@
-# add any modules we use! 
-name: market_making_rl
+name: rl_market
+channels:
+  - defaults
 dependencies:
-  - python>=3.9
+  - python
+  - pytorch
   - numpy
   - matplotlib
-  - cycler
-  - glob
-  - heapq
   - pandas
-  - argparse
   - stochastic
-  - pip: maskedtensor
+  - scipy
+  - tqdm
+  - setuptools

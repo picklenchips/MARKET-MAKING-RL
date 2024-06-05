@@ -1,21 +1,22 @@
 from marketmaker import MarketMaker, UniformMarketMaker
 import argparse
-from config import Config, get_config
+from config import get_config, Config
 import numpy as np
 import torch
-from glob import glob
+from config import SAVEDIR
 
 parser = argparse.ArgumentParser()
 parser.add_argument("--policy", default='ppo')
 parser.add_argument("-ne", "--ne", type=int)
 parser.add_argument("-nb", "--nb", type=int)
 parser.add_argument("-nt", "--nt", type=int)
-parser.add_argument("-l", "--load",   help='load a model from a filepath/name & resume')
+parser.add_argument("-l", "--load",   help='load a model from a results/name directory')
 parser.add_argument("-r", "--resume", action='store_true', help='resume training from a model')
 parser.add_argument("--seed", default=0, type=int)
 parser.add_argument("--noclip", action='store_true', help='dont clip the ratio in PPO')
 parser.add_argument("--noppo", action='store_true', help='dont use PPO, just use regular policy grad')
 parser.add_argument("--noadv", action='store_true', help='dont use advantages, just returns')
+parser.add_argument("--immediate", action='store_true', help='use immediate rewards')
 
 parser.add_argument("-p", "--plot", action='store_true', help='dont train, just plot')
 # TD LAMBDA STUFF?
@@ -26,35 +27,11 @@ if __name__ == "__main__":
     torch.random.manual_seed(args.seed)
     np.random.seed(args.seed)
 
-    config = False
-    if args.load:  # load a model from a filepath/name & resume
-        config = get_config(args.load)
-    if not config:  # DEFAULT CONFIG
-        if args.td: 
-            config = Config(trajectory='TD')
-        else:
-            config = Config()
-    
-    # if we add other policies LOL
-    policy = args.policy.lower()
-    if policy != 'ppo': 
-        print('as if we have implemented another policy...')
-        pass
-    if args.nb: config.nb = args.nb
-    if args.nt: config.nt = args.nt
-    if args.ne: config.ne = args.ne
-    if args.noppo: config.do_ppo = False
-    if args.noadv: config.use_baseline = False
-    if args.noclip: config.do_clip = False
+    config = get_config(args)
+    #print(config.print())
 
-    
-    config.set_name(make_new=(not args.resume and not args.plot and not args.load))
-    if args.resume or args.plot:  # resume from same specifications as given above
-        # assume there is only one thing in each directory
-        filename = glob(config.save_dir+"*.pth")[-1]
-        config = get_config(filename)
-
-    MM = MarketMaker(config) if config.book_quit else UniformMarketMaker(config)
+    #MM = MarketMaker(config) if config.book_quit else 
+    MM = UniformMarketMaker(config)
     if args.resume or args.load or args.plot:
         MM.load()
         print(f"\t Resuming {config.name} from epoch {MM.config.starting_epoch}")

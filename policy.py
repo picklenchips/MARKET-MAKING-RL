@@ -52,7 +52,10 @@ class GaussianPolicy(BasePolicy, nn.Module):
 
     def action_distribution(self, observations):
         """ continuous action distribution for given observations """
-        return ptd.MultivariateNormal(self.network(observations), scale_tril=torch.diag(self.std()))
+        means = self.network(observations)
+        stds = torch.diag(self.std())
+        thing = ptd.MultivariateNormal(means, scale_tril=stds)
+        return thing
 
 
 ##########################################
@@ -94,12 +97,7 @@ class PolicyGradient():
     def __init__(self, config: Config) -> None:
         """
         Initialize Policy Gradient Class
-
-        Args:
-            env: in this case, Market(). has functions 
-                 reset(), step(), state(), act(), reward(), final_reward()
-            config: class with all parameters
-            logger: logger instance from the logging module
+            - config: class with all parameters
         """
         self.config = config
         self.discount = config.discount
@@ -153,7 +151,7 @@ class PolicyGradient():
         for path in paths:
             rewards = path['rew']
             returns = np.empty_like(rewards)
-            values = self.baseline.forward(np2torch(path['traj'])).cpu().detach().numpy()
+            values = self.baseline.forward(np2torch(path['tra'])).cpu().detach().numpy()
             returns[-1] = rewards[-1]
             G = rewards[-1] + self.config.discount * values[-1]
             returns[-1] = G
@@ -236,3 +234,11 @@ class PPO(PolicyGradient):
         loss         = -torch.mean(minimum) - torch.mean(self.entropy_coef * entropy_loss)
         loss.backward()
         self.optimizer.step()
+
+if __name__ == "__main__":
+    print('loading config')
+    config = Config()
+    print('loading PPO')
+    PPO = PPO(config)
+    observations = np.random.rand(100, config.obs_dim)
+    actions = PPO.policy.act(observations)

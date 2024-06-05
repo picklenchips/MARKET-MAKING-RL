@@ -6,12 +6,14 @@ from policy import PPO
 from util import np, get_logger, plot_WIM, plot_WIM_2, export_plot, np2torch
 from tqdm import tqdm
 import os
+import sys
 
 class MarketMaker:
     def __init__(self, config: Config, inventory=0, wealth=0) -> None:
         self.config = config
         self.market = Market(inventory, wealth, config)
         self.logger = get_logger(config.log_out)
+        self.logger.info(self.config.print())
         self.P = PPO(config)
         self.do_ppo = config.do_ppo
         self.config.use_baseline = True
@@ -58,7 +60,7 @@ class MarketMaker:
                 time_left = (T - t*dt,)
                 state = self.market.state() + time_left
                 if self.do_ppo:  # need to get log probability directly
-                    action, logprob = self.P.policy.act(np.array(state), return_log_prob=True)
+                    action, logprob = self.P.policy.act(state, return_log_prob=True)
                     self.market.submit(*action)
                 else:
                     action = self.market.act(state, self.P.policy.act)
@@ -115,7 +117,6 @@ class MarketMaker:
                     returns, finals = self.P.get_uneven_td_returns(paths)
                 else:
                     raise NotImplementedError("Trajectory type not supported")
-                
                 advantages = self.P.get_advantages(returns, trajectories)
                 # first update will have old_logprobs = logprobs, so do 
                 # C steps of policy updates on the same trajectories
@@ -139,7 +140,7 @@ class MarketMaker:
     def plot(self):
         """ plot final scores and final path """
         finals = np.array(self.final_returns)
-        print(finals.shape)
+        print(f'final returns have shape {finals.shape}')
         export_plot(finals,"Scores",self.config.name,self.config.scores_plot)
         with tqdm(total=100) as pbar:
             path = self.get_paths(pbar, nb=100, track_all=True)
@@ -210,7 +211,7 @@ class UniformMarketMaker(MarketMaker):
         trajectories = np.empty((nbatch, nt, val_dim))
         actions = np.empty((nbatch, nt, act_dim))
         rewards = np.empty((nbatch, nt))
-        if self.PPO:
+        if self.do_ppo:
             logprobs = np.empty((nbatch, nt))
         if track_all:  # track all for later plotting?
             wealth = np.empty((nbatch, nt))
@@ -223,7 +224,7 @@ class UniformMarketMaker(MarketMaker):
             for t in range(nt):
                 time_left = (T - t*dt,)
                 state = self.market.state() + time_left
-                if self.PPO:  # need to get log probability directly
+                if self.do_ppo:  # need to get log probability directly
                     action, logprob = self.P.policy.act(np.array(state), return_log_prob=True)
                     logprobs[b, t] = logprob
                     self.market.submit(*action)
@@ -240,10 +241,11 @@ class UniformMarketMaker(MarketMaker):
                     inventory[b, t] = I
                     midprices[b, t] = midprice
             rewards[b, t] += self.market.final_reward(W, I, self.market.book.midprice)
-            pbar.update(1)
+            if pbar:
+                pbar.update(1)
         observations = trajectories[...,:obs_dim]
         paths = {"tra": trajectories, "obs": observations, "act": actions, "rew": rewards}
-        if self.PPO:
+        if self.do_ppo:
             paths["old"] = logprobs
         if track_all:
             paths["wea"] = wealth
@@ -288,7 +290,7 @@ class UniformMarketMaker(MarketMaker):
 
                 # Plot if required
                 if plot_after and (epoch + 1) % plot_after == 0:
-                    plot_WIM(paths['wea'], paths['inv'], paths['mid'], title=f'Epoch {epoch}', savename=self.config.out + '.png')
+                    plot_WIM(paths['wea'], paths['inv'], paths['mid'], self.dt, title=f'Epoch {epoch}', savename=self.config.out + '.png')
 
         self.logger.info("Training complete!")  # DONZO BONZO
         self.save(epoch + 1)

@@ -191,6 +191,8 @@ class Market():
     def reward(self, r_state):
         """ immediate reward """
         # dW, dI, time_left = reward_state
+        if not self.config.immediate_reward:
+            return 0
         if isinstance(r_state, tuple):
             r_state = np.array(r_state)
         if self.config.subtract_time:

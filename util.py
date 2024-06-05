@@ -10,16 +10,11 @@ from cycler import cycler
 import matplotlib as mpl
 import matplotlib.pyplot as plt
 import matplotlib.ticker as mtick
-import sys, time, os
+import os
 from scipy.optimize import curve_fit
-from tqdm import tqdm
-import torch
 import torch
 import torch.nn as nn
 import logging
-from scipy import stats
-import logging
-from scipy import stats
 #from torch.masked import masked_tensor
 
 # blue = bids, red = asks
@@ -45,8 +40,6 @@ def np2torch(x, cast_double_to_float=True):
         x = torch.Tensor(x).to(device)
     if cast_double_to_float and x.dtype == torch.float64:
         x = x.float()  # cast double to float
-    #if not isinstance(mask, int):
-    #    x = masked_tensor(x, mask)
     return x
 
 def build_mlp(input_size, output_size, n_layers, hidden_size, activation=nn.ReLU()):

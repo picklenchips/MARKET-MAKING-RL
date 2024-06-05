@@ -27,25 +27,28 @@ class Market():
         self.max_t = config.max_t  # second
         self.dt    = config.dt   # millisecond
         # reward stuff
-        self.a = 0.01  # how much we weigh dW
+        self.a = 1  # how much we weigh dW
         self.b = 0.1  # how much we weigh dI
         self.c = 1   # how much we negatively weigh time
         self.discount = config.discount
 
-    def reset(self, mid=100, spread=10, nstocks=10000, nsteps=1000, substeps=1, 
+    def reset(self, mid=100, spread=10, nstocks=1000, nsteps=1000, substeps=1, 
               make_bell=True, plot=False):
-        """ Randomly initialize order book """
+        """ Randomly initialize order book 
+        - nstocks is num stocks on each side """
         if self.book: del(self.book)
         self.book = OrderBook(mid)
         # start with symmetric spread
         # JUST DO A BELL CURVE ON EACH SIDE
+        tot_amount = 0
         if make_bell:
-            for t in range(nsteps):
+            while tot_amount < nstocks:
                 bid = np.random.normal(mid-spread/2, spread/3)
                 ask = np.random.normal(mid+spread/2, spread/3)
-                amount = np.random.poisson(5*nstocks/nsteps)
+                amount = np.random.poisson(2*nstocks/nsteps)
                 self.book.bid(amount, bid)
                 self.book.ask(amount, ask)
+                tot_amount += amount
             if plot:
                 self.book.plot()
             return
@@ -102,7 +105,7 @@ class Market():
         A = self.Lambda_s / self.alpha
         return A * np.exp(-k*delta_b)
     
-    def step(self, nsteps=1):
+    def step(self, nsteps=1, plot=False):
         """ Evolve market order book by updating midprice and placing market orders
         - returns change in wealth, inventory (dW, dI) """
         dW = dI = 0
@@ -111,8 +114,12 @@ class Market():
             nbuy  = np.random.poisson(self.lambda_buy(self.book.nlow_ask))
             nsell = np.random.poisson(self.lambda_sell(self.book.nhigh_bid))
             n_ask_lift, bought = self.book.buy(nbuy)
-            n_bid_hit, sold = self.book.sell(nsell)
+            n_bid_hit, sold = self.book.sell(nsell)  # 
             dW += bought - sold; dI += n_bid_hit - n_ask_lift
+        if plot:  # for limit order plotting purposes
+            if not n_bid_hit: n_bid_hit = 1
+            if not n_ask_lift: n_ask_lift = 1
+            return dW, dI, self.book.midprice, (n_bid_hit, sold/n_bid_hit, n_ask_lift, bought/n_ask_lift)
         return dW, dI, self.book.midprice
 
 # --- STATES / ACTIONS --- #
@@ -159,9 +166,7 @@ class Market():
         else:  # just run the network on the state!
             if not policy:
                 raise NotImplementedError("Policy network is not defined!")
-            if not isinstance(state, np.ndarray):
-                state = np.array(state)
-            action = policy(np2torch(state)).detach().cpu().numpy()
+            action = policy(state)
         self.submit(*action)
         return action
     
@@ -191,13 +196,13 @@ class Market():
     def reward(self, r_state):
         """ immediate reward """
         # dW, dI, time_left = reward_state
-        if not self.config.immediate_reward:
+        if not self.config.immediate_reward: 
             return 0
         if isinstance(r_state, tuple):
             r_state = np.array(r_state)
         if self.config.subtract_time:
             return self.a*r_state[...,0] + np.exp(-self.b*r_state[...,2]) * np.sign(r_state[...,1]) - self.c*r_state[...,2]
-        return self.a*r_state[...,0] + np.exp(-self.b*r_state[...,2]) * np.sign(r_state[...,1])
+        return self.a*r_state[...,0]# + np.exp(-self.b*r_state[...,2]) * np.sign(r_state[...,1])
     
     def final_reward(self, W, inventory, midprice):
         return W + inventory*midprice
@@ -206,7 +211,7 @@ class Market():
         return midprice - inventory * self.gamma * self.sigma**2 * t_left
 
     def optimal_spread(self, time_left):
-        return self.gamma * self.sigma**2 * time_left + 2*np.log(1+2*self.gamma/(self.alpha*(self.K_b+self.K_a)))/self.gamma
+        return self.gamma * self.sigma**2 * time_left + 2*np.log(1+2*self.gamma/(self.alpha*(self.K_b+self.K_s)))/self.gamma
 
 
 # test market initialization 
@@ -218,4 +223,4 @@ if __name__ == "__main__":
     config = Config()
     M = Market(0, 0, config)
     for i in range(100):
-        M.reset(plot=True, make_bell=False)
+        M.reset(plot=True, make_bell=True)

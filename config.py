@@ -5,22 +5,25 @@ from collections import defaultdict
 from glob import glob
 import argparse
 
-def to_TF(value): return "T" if value else "F"
+to_TF = lambda value: "T" if value else "F"
+full_TF = lambda value, label: "no-"+label if not value else label
+
 SAVEDIR = os.getcwd()+"/results"
 if not os.path.exists(SAVEDIR):
     os.mkdir(SAVEDIR)
 
 class Config:
-    def __init__(self, obs_dim=5, act_dim=4, rew_dim=2, n_layers=2, layer_size=10, 
+    def __init__(self, obs_dim=5, act_dim=4, rew_dim=2, n_layers=4, layer_size=10, 
                  lr=1e-3, discount=0.99, subtract_time=False, immediate_reward=False,
                  discrete=False, use_baseline=True, normalize_advantages=True, 
                  do_ppo = True, eps_clip=0.2, do_clip = True, entropy_coef = 0.02, 
                  nbatch=100, nepoch=1000, nt=10000, dt=1e-3, max_t=0, 
-                 gamma=1, sigma=1e-2, trajectory='MC',
-                 update_freq=5, lambd=0.9, save_config=True) -> None:
+                 gamma=1, sigma=1e-2, trajectory='MC', past_obs=2,
+                 update_freq=5, lambd=0.9, save_config=False) -> None:
         # network stuff
         self.book_quit = True   # END EARLY IF BOOK IS INVALID
 
+        self.past_obs = past_obs  # number of past observations to include
         self.obs_dim = obs_dim  # policy input
         self.act_dim = act_dim  # policy output
         self.rew_dim = 2        # reward additional info
@@ -62,38 +65,8 @@ class Config:
             self.set_name(make_new=True)
             self.save()
     
-    def set_name(self, epoch=None, make_new=False):
-        """ update the configuration name """
-        strs = [self.trajectory]
-        ints = [self.ne, self.nb, self.nt]
-        floats = []
-        bools = [self.discrete, self.use_baseline, self.normalize_advantages, self.do_clip, self.book_quit, self.subtract_time, self.immediate_reward]
-        name = '_'.join(['-'.join(strs),'-'.join(map(str, ints)),''.join(map(to_TF, bools))])
-        # make new directory to store results
-        L = len(name)
-        i = 0  # duplicate models?
-        # if model is fully complete, don't overwrite
-        if make_new:
-            while os.path.exists(f"{SAVEDIR}/{name}/{self.ne}_{name}_val.pth"):
-                name = name[:L]+str(i)
-                i += 1
-        if not os.path.exists(f"{SAVEDIR}/{name}"):
-            os.mkdir(f"{SAVEDIR}/{name}")
-        # SET NAMES
-        self.save_dir = f"{SAVEDIR}/{name}/"
-        self.base_name = name
-        if isinstance(epoch, int):   # number of epochs completed
-            name = f"{epoch}_" + name
-        self.name = name
-        self.out  = self.save_dir + name
-        self.scores_out = self.out+'_scores.npy'
-        self.scores_plot = self.out+'_scores.png'
-        self.wim_plot   = self.out+'_wim.png'
-        self.log_out    = self.save_dir+self.base_name+".log"
-        return self.name, self.out
-    
-    def print(self):
-        """ print the configuration to a string """
+    def __str__(self):
+        """ return string version of config """
         charsPerLine = 70; rowstart = ''
         thingsPerLine = 1
         ret = "Config: \n"
@@ -123,74 +96,74 @@ class Config:
     def save(self, filename=None):
         """ save a configuration to a filename"""
         if not filename:
-            filename = self.out + "_config.pkl"
-        filehandler = open(filename, 'wb')
-        pickle.dump(self, file=filehandler)
-        #filehandler.close() 
+            filename = self.base_out + "_config.pkl"
+        with open(filename, 'wb') as f:
+            pickle.dump(self, f)
 
-    def load_config(self, filename=None):
+    def load(self, filename=None):
         """ load a configuration from a filename """
         if not filename:
             filename = self.out + "_config.pkl"
-        filehandler = open(filename, 'r')
-        config = pickle.load(filehandler)
-        #filehandler.close()
+        config = False
+        with open(filename, 'rb') as f:
+            config = pickle.load(f)
+        dirabove = '/'.join(filename.split('/')[:-1])
+        policypath = glob(dirabove+"/*_pol.pth")[-1]
+        config.starting_epoch = int(policypath.split("/")[-1].split("_")[0])
+        config.set_name(config.starting_epoch)
         return config
+    
+    def set_name(self, epoch=0, make_new=False):
+        """ update the configuration name. needed for naming after each epoch for correct 
+        saving and loading of value, policy networks. """
+        strs = [self.trajectory]
+        ints = [self.ne, self.nb, self.nt]
+        floats = []
+        b_labs = ["disc", "use-A", "norm-A", "clip", "early", "subT", "imm-R"]
+        bools = [self.discrete, self.use_baseline, self.normalize_advantages, self.do_clip, self.book_quit, self.subtract_time, self.immediate_reward]
+        name = '_'.join(['-'.join(strs),'-'.join(map(str, ints)),''.join(map(to_TF, bools))])
+        full_name = '_'.join(['-'.join(strs),'-'.join(map(str, ints)),'-'.join(map(full_TF, bools, b_labs))])
+        # make new directory to store results
+        L = len(name)
+        i = 0  # duplicate models?
+        # if model is fully complete, don't overwrite
+        if make_new:
+            while os.path.exists(f"{SAVEDIR}/{name}/{self.ne}_{name}_pol.pth"):
+                name = name[:L]+str(i)
+                i += 1
+            if i: full_name += str(i)
+            if not os.path.exists(f"{SAVEDIR}/{name}"):
+                os.mkdir(f"{SAVEDIR}/{name}")
+        # SET NAMES
+        self.base_name = name
+        self.save_dir = f"{SAVEDIR}/{name}/"
+        if epoch:   # number of epochs completed
+            name = f"{epoch}_" + name
+            full_name = f"{epoch}_" + full_name
+        self.name = name
+        self.full_name = full_name  # used for plotting - translates the bools
+        self.base_out = self.save_dir + self.base_name
+        self.out  = self.save_dir + name
+        self.scores_out  = self.out+'_scores.npy'
+        self.scores_plot = self.out+'_scores.png'
+        self.wim_plot    = self.out+'_wim.png'
+        self.log_out     = self.base_out+".log"
+        return self.name, self.out
 
 #TODO: just store the .pkl of the configs instead of re-creating from the filename
 # bc with more complex configs, the filename will be a mess
 # so use config.load() yeah?
-def get_config(args: argparse.ArgumentParser) -> Config:
-    """ Load a configuration from a filename """
-    config = False; pathname = ''
-    if args.load:  # load a model from a filepath directory
-        # FIRST, LOOK FOR PKL FILES
-        for f in glob(SAVEDIR+"/"+args.load):
-            if f[-4] == ".pkl":
-                config = pickle.load(f)
-                break
-            if os.path.isdir(f):
-                if f[-1] != "/":
-                    f += "/"
-                for f1 in glob(f+"*_config.pkl"):
-                    config = pickle.load(f1)
-                    break
-                # ELSE JUST ROLL WITH DIRECTORY NAME
-        pathname = f
-        if not config:
-            config = Config(save_config=False)
-    # SET DEFAULT CONFIG
-    else:
-        config = Config(save_config=False)
-        # if we add other policies LOL
-        if args.td: config.trajectory = 'TD'
-        if args.nb: config.nb = args.nb
-        if args.nt: config.nt = args.nt
-        if args.ne: config.ne = args.ne
-        if args.noppo: config.do_ppo = False
-        if args.noadv: config.use_baseline = False
-        if args.noclip: config.do_clip = False
-        if args.immediate: config.immediate_reward = True
-    
-    config.set_name(make_new=(not args.resume and not args.plot and not args.load))
-    if args.resume or args.plot:
-        pathname = config.save_dir
-    if not pathname:
-        config.save()
-        return config
+def config_from_name(pathname: str) -> Config | FileNotFoundError:
+    """ return config from its name by reversing set_name """
     if "/" in pathname:
-        pathname = pathname.split("/")[-1]
+        if pathname[-1] == '/':
+            pathname = pathname[:-1]
     parts = pathname.split("/")[-1].split("_")
+    if len(parts) < 3: raise FileNotFoundError(f"{pathname} is not a config path")
+    config = Config()
     if parts[0].isdigit():
-        if not config:
-            config = Config()
-            config.starting_epoch = int(parts[0])
-            parts = parts[1:]
-        else:  # config has been loaded previously
-            config.starting_epoch = int(parts[0])
-            config.set_name(config.starting_epoch)
-            return config
-    # GET CONFIG FROM PATHNAME ONLY
+        config.starting_epoch = int(parts[0])
+        parts = parts[1:]
     config.trajectory = parts[0]
     config.ne, config.nb, config.nt = map(int, parts[1].split("-"))
     config.discrete = parts[2][0] == "T"
@@ -205,10 +178,74 @@ def get_config(args: argparse.ArgumentParser) -> Config:
         config.immediate_reward = parts[2][6] == "T"
     # load from string
     config.set_name(config.starting_epoch)
+    return config
+
+def search_for_config(filepath: str) -> Config | bool:
+    """ Load a configuration from a filename
+    finds pickle files, and then sets config from directory name """
+    if not filepath.startswith(SAVEDIR):
+        filepath = SAVEDIR + "/" + filepath
+    for f in glob(filepath):
+        # first, look for pickle files
+        if f[-4] == ".pkl":
+            return Config().load(f)
+        if os.path.isdir(f):
+            if f[-1] != "/":
+                f += "/"
+            for f1 in glob(f+"*_config.pkl"):
+                return Config().load(f1)
+            try: 
+                return config_from_name(f)
+            except FileNotFoundError:
+                pass
+        else:
+            dirabove = '/'.join(f.split('/')[:-1])
+            try:
+                return config_from_name(dirabove)
+            except FileNotFoundError:
+                pass
+    return False
+
+def get_config(args: argparse.ArgumentParser) -> Config:
+    """ Load a configuration from a filename """
+    config = False; pathname = ''
+    if not args: return Config()
+    if args.load:  # load a model from a filepath directory
+        # FIRST, LOOK FOR PKL FILES
+        config = search_for_config(args.load)
+        if not config:
+            raise FileNotFoundError(f"Could not find config file from {args.load}")
+        return config
+    # SET DEFAULT CONFIG
+    config = Config(save_config=False)
+    if args.td: config.trajectory = 'TD'
+    if args.nb: config.nb = args.nb
+    if args.nt: config.nt = args.nt
+    if args.ne: config.ne = args.ne
+    if args.noppo: config.do_ppo = False
+    if args.noadv: config.use_baseline = False
+    if args.noclip: config.do_clip = False
+    if args.immediate: config.immediate_reward = True
+    if args.nobookquit: config.book_quit = False
+    if args.subtract_time: config.subtract_time = True
+    
+    config.set_name()
+    # see if there is an existing plot w the same thing
+    if oldconfig := search_for_config(config.save_dir):
+        if args.resume or args.plot or (oldconfig.starting_epoch and oldconfig.starting_epoch < oldconfig.ne):
+            oldconfig.set_name(oldconfig.starting_epoch)
+            return oldconfig
+    elif args.resume or args.plot:
+        return FileNotFoundError(f"Could not find config file to resume from {config.base_name}")
+    if oldconfig:
+        config = oldconfig
+    config.set_name(make_new=True)
     config.save()
     return config
 
 # test config naming
 if __name__ == "__main__":
-    config = Config()
-    print(config.print())
+    while 1:
+        t = input("Type config name to load from: ")
+        config = search_for_config(t)
+        print(config)

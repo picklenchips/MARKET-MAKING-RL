@@ -190,37 +190,54 @@ class OrderBook():
         if price == self.asks[0][0]:
             self.recalculate()
     
-    def plot(self, title="Order Book"):
+    def plot(self, wait_time=0.2, title="Order Book", market_order=False, limit_order=False):
         """Make histogram of current limit-orders"""
         fig, ax = plt.subplots(figsize=FIGSIZE)
         ax.set(xlabel='Price per Share',ylabel='Volume')
         # normalize the bin widths
         nbins = 100  # total nbins across range of data
-        if not len(self.asks):
-            print('No asks in the order book!')
-        if not len(self.bids):
-            print('No bids in the order book!')
-        if not len(self.asks) or not len(self.bids):
-            plt.close()
-            return
-        highest_ask = max([a[0] for a in self.asks])
-        lowest_bid  = min([-b[0] for b in self.bids])
-        pricerange = highest_ask - lowest_bid
-        brange = max(self.high_bid - lowest_bid,0.01)
-        arange = max(highest_ask - self.low_ask,0.01)
-        bbins = math.ceil(nbins*brange/pricerange)
-        abins = math.ceil(nbins*arange/pricerange)
-        # plot the bids and asks
-        ax.hist([-b[0] for b in self.bids], weights = [b[1] for b in self.bids], bins=bbins,label='Bids',edgecolor='black',linewidth=0.5)
-        ax.hist([s[0] for s in self.asks], weights = [s[1] for s in self.asks], bins=abins,label='Asks',edgecolor='black',linewidth=0.5)
+        self.recalculate()
+        if len(self.asks) and len(self.bids):
+            highest_ask = max([a[0] for a in self.asks])
+            lowest_bid  = min([-b[0] for b in self.bids])
+            pricerange = highest_ask - lowest_bid
+            brange = max(self.high_bid - lowest_bid,0.01)
+            arange = max(highest_ask - self.low_ask,0.01)
+            bbins = math.ceil(nbins*brange/pricerange)
+            abins = math.ceil(nbins*arange/pricerange)
+            # plot the bids and asks
+            ax.hist([-b[0] for b in self.bids], weights = [b[1] for b in self.bids], bins=bbins,label='Bids',edgecolor='black',linewidth=0.5)
+            ax.hist([s[0] for s in self.asks], weights = [s[1] for s in self.asks], bins=abins,label='Asks',edgecolor='black',linewidth=0.5)
+        else:  # just bids or just asks
+            if len(self.asks):
+                highest_ask = max([a[0] for a in self.asks])
+                arange = max(highest_ask - self.low_ask,0.01)
+                abins = nbins
+                ax.hist([s[0] for s in self.asks], weights = [s[1] for s in self.asks], bins=abins,label='Asks',edgecolor='black',linewidth=0.5)
+            elif len(self.bids):
+                lowest_bid  = min([-b[0] for b in self.bids])
+                brange = max(self.high_bid - lowest_bid,0.01)
+                bbins = nbins
+                ax.hist([-b[0] for b in self.bids], weights = [b[1] for b in self.bids], bins=bbins,label='Bids',edgecolor='black',linewidth=0.5)
         # set plotting stuff
         if self.midprice:  # add dashed line for midprice
             lowy, highy = ax.get_ylim()
             ax.plot([self.midprice,self.midprice],[lowy,highy*0.8],linestyle='dashed',color='black')
-            title += f" [{round(self.midprice,2)}, ({uFormat(self.delta_b,0)}, {uFormat(self.delta_a,0)})]"
+            if not market_order:
+                title += f" [{round(self.midprice,2)}, ({uFormat(self.delta_b,0)}, {uFormat(self.delta_a,0)})]"
+        if not isinstance(market_order, bool):  # plot market orders
+            # market_order = (-n_bid, bid, -n_ask, ask)
+            ax.hist([market_order[1]], weights = [-market_order[0]], bins = bbins, edgecolor='black', linewidth=1, color=f'C{3}')  # purple for bid-hitting
+            ax.hist([market_order[3]], weights = [-market_order[2]], bins = abins, edgecolor='black', linewidth=1, color=f'C{2}')  # orange for ask-lifting
+        if not isinstance(limit_order, bool):  # agent action
+            # limit_order = (n_bid, bid, n_ask, ask)
+            ax.hist([limit_order[1]], weights = [limit_order[0]], bins = bbins, edgecolor='black', linewidth=1, color=f'C{3}')
+            ax.hist([limit_order[3]], weights = [limit_order[2]], bins = abins, edgecolor='black', linewidth=1, color=f'C{2}')
         plt.title(title)
         plt.legend(loc='upper center',ncol=2)
-        plt.show()
+        plt.show(block=False)
+        plt.pause(wait_time)
+        plt.close()
 
 # we getting Pythonic up in this
 if __name__ == "__main__":

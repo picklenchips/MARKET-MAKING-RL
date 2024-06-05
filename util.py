@@ -9,7 +9,7 @@ from glob import glob
 from cycler import cycler
 import matplotlib as mpl
 import matplotlib.pyplot as plt
-import matplotlib.ticker as mtick
+#import matplotlib.ticker as mtick
 import os
 from scipy.optimize import curve_fit
 import torch
@@ -55,16 +55,17 @@ def get_logger(filename):
     """ Return a logger instance to a file """
     if os.path.exists(filename):
         os.remove(filename)
-    logger = logging.getLogger("logger")
+    logger = logging.getLogger("LOG")
     logger.setLevel(logging.DEBUG)
     logging.basicConfig(filename=filename, 
-                        format='%(asctime)s:%(name)-12s:%(levelname)-8s:%(message)s', 
+                        format='%(asctime)s:%(levelname)s:%(message)s', 
                         datefmt='%m-%d %H:%M',
                         level=logging.DEBUG)
-    handler = logging.FileHandler(filename)
-    handler.setLevel(logging.DEBUG)
-    handler.setFormatter(logging.Formatter('%(asctime)s:%(name)-12s:%(levelname)-8s:%(message)s'))
-    logger.addHandler(handler)
+    # LOL was doing everything twice oops
+    #handler = logging.FileHandler(filename)
+    #handler.setLevel(logging.DEBUG)
+    #handler.setFormatter(logging.Formatter('%(asctime)s:%(name)-12s:%(levelname)-8s:%(message)s'))
+    #logger.addHandler(handler)
     return logger
 
 def normalize(x):
@@ -100,7 +101,8 @@ def plot_WIM(wealth: np.ndarray, inventory: np.ndarray, midprices: np.ndarray, d
     axs[1,1].set(xlabel='Time')
     if title: fig.suptitle(title)
     if savename: plt.savefig(savename)
-    plt.show()
+    plt.close()
+    #plt.show()
 
 def plot_WIM_2(paths, dt: float, title='', savename=''):
     """ plot data from a batch of trajectories
@@ -128,7 +130,7 @@ def plot_WIM_2(paths, dt: float, title='', savename=''):
     axs[1,1].set(xlabel="Time")
     if title: fig.suptitle(title)
     if savename: fig.savefig(savename)
-    plt.show()
+    plt.close()
 
 def export_plot(y, ylabel, title, filename):
     """ plot epochs. """
@@ -141,7 +143,7 @@ def export_plot(y, ylabel, title, filename):
     ax.set(xlabel='Training Episode',ylabel=ylabel)
     ax.set_title(title)
     fig.savefig(filename)
-    plt.show()
+    plt.close()
 
 """ Used for exponential value functions """
 class Exponential(torch.nn.Module):

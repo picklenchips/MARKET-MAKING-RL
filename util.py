@@ -41,6 +41,7 @@ def np2torch(x, requires_grad=False, cast_double_to_float=True):
     if cast_double_to_float and x.dtype == torch.float64:
         x = x.float()  # cast double to float
     if requires_grad:
+        x = x.float()
         x.requires_grad = True
     return x
 

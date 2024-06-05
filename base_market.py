@@ -32,7 +32,7 @@ class Market():
         self.c = 1   # how much we negatively weigh time
         self.discount = config.discount
 
-    def reset(self, mid=100, spread=10, nstocks=1000, nsteps=1000, substeps=1, 
+    def reset(self, mid=100, spread=10, nstocks=10000, nsteps=1000, substeps=1, 
               make_bell=True, plot=False):
         """ Randomly initialize order book 
         - nstocks is num stocks on each side """
@@ -43,14 +43,15 @@ class Market():
         tot_amount = 0
         if make_bell:
             while tot_amount < nstocks:
-                bid = np.random.normal(mid-spread/2, spread/3)
-                ask = np.random.normal(mid+spread/2, spread/3)
-                amount = np.random.poisson(2*nstocks/nsteps)
-                self.book.bid(amount, bid)
-                self.book.ask(amount, ask)
-                tot_amount += amount
+                delta_b = np.random.normal(spread/2, spread/4)
+                delta_a = np.random.normal(spread/2, spread/4)
+                nbid = np.random.poisson(2*nstocks/nsteps)
+                nask = np.random.poisson(2*nstocks/nsteps)
+                self.book.bid(nbid, mid-delta_b)
+                self.book.ask(nask, mid+delta_a)
+                tot_amount += nask + nbid
             if plot:
-                self.book.plot()
+                self.book.plot(title=', '.join(map(str, self.state())))
             return
         # start with symmetric spread and market-step
         self.book.bid(nstocks//2, mid-spread/2)
@@ -119,13 +120,13 @@ class Market():
         if plot:  # for limit order plotting purposes
             if not n_bid_hit: n_bid_hit = 1
             if not n_ask_lift: n_ask_lift = 1
-            return dW, dI, self.book.midprice, (n_bid_hit, sold/n_bid_hit, n_ask_lift, bought/n_ask_lift)
+            return dW, dI, self.book.midprice, (n_bid_hit, self.book.high_bid, n_ask_lift, self.book.low_ask)
         return dW, dI, self.book.midprice
 
 # --- STATES / ACTIONS --- #
     def state(self) -> tuple[int, float, int, float]:
         """ returns tuple of n_bid, bid_price, n_ask, ask_price """
-        return self.book.nhigh_bid, self.book.high_bid, self.book.nlow_ask, self.book.low_ask
+        return self.book.nhigh_bid, self.book.delta_b, self.book.nlow_ask, self.book.delta_a
 
     def act(self, state: tuple | np.ndarray | list | torch.Tensor, policy=None):
         """ Perform action on order book (dim=4)
@@ -162,7 +163,7 @@ class Market():
             ask_price = res_price + optimal_spread / 2
             n_bid = np.random.poisson(n_bid)
             n_ask = np.random.poisson(n_ask)
-            action = (n_bid, bid_price, n_ask, ask_price)
+            action = (n_bid, self.book.midprice - bid_price, n_ask, ask_price - self.book.midprice)
         else:  # just run the network on the state!
             if not policy:
                 raise NotImplementedError("Policy network is not defined!")
@@ -170,21 +171,23 @@ class Market():
         self.submit(*action)
         return action
     
-    def submit(self, n_bid, bid_price, n_ask, ask_price):
+    def submit(self, n_bid, delta_b, n_ask, delta_a):
         """ Perform a limit order action, making (up to) 2 limit orders: a bid and ask
         - if n_bid or n_ask < 0.5, will not bid or ask """
         # make sure that bid price is always less than ask price
-        bid_price = np.clip(bid_price, 0, min(bid_price, self.book.low_ask))
-        ask_price = np.clip(ask_price, max(self.book.high_bid, ask_price), np.inf)
+        delta_b = max(delta_b, 0)  # deltas cant be negative
+        delta_a = max(delta_a, 0)
+        bid_price = self.book.midprice - delta_b
+        ask_price = self.book.midprice + delta_a
+        #bid_price = np.clip(bid_price, 0, self.book.low_ask)
+        #ask_price = np.clip(ask_price, self.book.high_bid, np.inf)
         # can only bid integer multiples
         n_bid = round(n_bid)
         n_ask = round(n_ask)
         # LOB automatically only inserts price in cents so dw ab
         # bid_price = round(bid_price.item(), 2)
-        if n_bid:
-            self.book.bid(n_bid, bid_price)
-        if n_ask:
-            self.book.ask(n_ask, ask_price)
+        self.book.bid(n_bid, bid_price)
+        self.book.ask(n_ask, ask_price)
         #return n_bid, bid_price, n_ask, ask_price
 
 # --- REWARD FUNCTIONS --- #
@@ -222,5 +225,5 @@ class Market():
 if __name__ == "__main__":
     config = Config()
     M = Market(0, 0, config)
-    for i in range(100):
+    for i in range(20):
         M.reset(plot=True, make_bell=True)

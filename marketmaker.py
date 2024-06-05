@@ -17,7 +17,7 @@ class MarketMaker:
         self.logger.info(self.config)
         self.do_ppo = config.do_ppo
         self.P = PPO(config) if self.do_ppo else PolicyGradient(config)
-        self.P.init_policy(self.market)
+        self.P.init_policy(self.market, new_train=False)  # train a more robust? initial policy
         self.dt = config.dt; self.max_t = config.max_t
         self.nt = config.nt
         self.final_returns = []  # track returns during training
@@ -128,7 +128,8 @@ class MarketMaker:
                 # first update will have old_logprobs = logprobs, so do 
                 # C steps of policy updates on the same trajectories
                 for C in range(self.config.update_freq):
-                    self.P.baseline.update_baseline(returns, trajectories)
+                    if self.config.use_baseline:
+                        self.P.baseline.update_baseline(returns, trajectories)
                     if self.do_ppo:
                         self.P.update_policy(observations, actions, advantages, logprobs)
                     else:
@@ -176,10 +177,11 @@ class MarketMaker:
                 W += dW; I += dI
                 pbar.update(1)
     
-    def plot(self, nb=0, nt=0, plot_book=False):
+    def plot(self, nb=0, nt=0, plot_book=False, wait_time=1):
         """ plot final scores and final sample path """
         nb = nb if nb else self.config.nb
         nb = nt if nt else self.config.nt
+        export_plot(np.array(self.final_returns),"Final Returns",self.config.full_name,self.config.scores_plot)
         with tqdm(total=nb) as pbar:
             pbar.set_description("Plotting Final Paths...")
             path = self.get_paths(pbar, nt=nt, nb=nb, track_all=True)
@@ -189,7 +191,7 @@ class MarketMaker:
                 plot_WIM(path['wea'], path['inv'], path['mid'], self.dt, title=f'Final Path (100 batches) {self.config.name}', savename=self.config.wim_plot)
         # plot a single trajectory...
         if plot_book:
-            self.plot_book_path(nt=nt)      
+            self.plot_book_path(nt=nt, wait_time=wait_time)      
     
     def save(self, epoch, do_plot=False):
         """ Save a trained market maker model """
@@ -208,9 +210,9 @@ class MarketMaker:
         finals = np.array(self.final_returns)
         np.save(self.config.scores_out, finals)
         if do_plot:
-            f = glob(old_dir+"/*_scores.png")
+            f = glob(old_dir+"*_scores.png")
             if len(f):
-                os.remove(f)
+                os.remove(f[-1])
             export_plot(finals,"Final Returns",self.config.full_name,self.config.scores_plot)
         msg = f'"[EPOCH {epoch}] Returns max: ({np.argmax(finals)}, {np.max(finals)}) and min: ({np.argmin(finals)}, {np.min(finals)})'
         self.logger.info(msg)
@@ -321,7 +323,8 @@ class UniformMarketMaker(MarketMaker):
 
                 # Policy updates
                 for C in range(self.config.update_freq):
-                    self.P.baseline.update_baseline(returns, paths['tra'])
+                    if self.config.use_baseline:
+                        self.P.baseline.update_baseline(returns, paths['tra'])
                     self.P.update_policy(paths['obs'], paths['act'], advantages, old_logprobs=paths.get('old'))
 
                 # Log the returns
@@ -343,7 +346,7 @@ if __name__ == "__main__":
     print(f'loaded config {config.name}')
     MM = MarketMaker(config)
     #print(MM.P.policy.state_dict())
-    MM.P.init_policy(MM.market,ne=1000,nb=100,start_dict=False)
+    MM.P.init_policy(MM.market,ne=1000,nb=100,new_train=False)
     out = config.out
     if os.path.exists(config.out+"_init-pol.pth"):
         os.remove(config.out+"_init-pol.pth")
@@ -352,5 +355,5 @@ if __name__ == "__main__":
     while 1:
         t = input('plot book path by pressing enter')
         if t: break
-        MM.plot_book_path(nt=1000, wait_time=0.5)
+        MM.plot_book_path(nt=500, wait_time=0.2)
     

@@ -61,6 +61,7 @@ def get_logger(filename):
     logger = logging.getLogger("LOG")
     logger.setLevel(logging.DEBUG)
     logging.basicConfig(filename=filename, 
+                        filemode = 'a',  # add to existing config
                         format='%(asctime)s:%(levelname)s:%(message)s', 
                         datefmt='%m-%d %H:%M',
                         level=logging.DEBUG)

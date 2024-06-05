@@ -39,7 +39,7 @@ if __name__ == "__main__":
         print(f"\t Resuming {config.name} from epoch {MM.config.starting_epoch}")
     if args.plot:
         print(f"Plotting {config.name}")
-        MM.plot(plot_book=True)
+        MM.plot(plot_book=True, nt=800, wait_time=0.5)
     else:  # do training
         print(f"Training {config.name}")
         MM.train(plot_after=100)

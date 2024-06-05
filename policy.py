@@ -128,21 +128,20 @@ class PolicyGradient():
         layers.append((f'network.{2*n_layers}.bias', out_bias))
         return OrderedDict(layers)
 
-    def init_policy(self, market: Market, ne=1000,nb=100, start_dict=True):
+    def init_policy(self, market: Market, ne=1000,nb=100, new_train=False):
         """ Initialize self.policy network to match intial market """
         network = build_mlp(self.config.obs_dim, self.config.act_dim, self.config.n_layers, self.config.layer_size)
         self.policy = CategoricalPolicy(network) if self.config.discrete else GaussianPolicy(network, self.config.act_dim)
         self.optimizer = torch.optim.Adam(params=self.policy.parameters(),lr=0.02)
         # load previous policy if it exists
-        if os.path.exists(self.config.network_out):
+        if os.path.exists(self.config.network_out) and not new_train:
             self.policy.load_state_dict(torch.load(self.config.network_out))
             print(f'initialized policy from {self.config.network_out}')
             self.optimizer = torch.optim.Adam(params=self.policy.parameters(),lr=self.config.lr)
             return
         # INITIALIZE POLICY TO MATCH FIRST OBSERVED STATE
         state_dict = self.start_dict()
-        if start_dict:
-            self.policy.load_state_dict(state_dict)
+        self.policy.load_state_dict(state_dict)
         save_after = ne/20
         with tqdm(total=ne) as pbar:
             pbar.set_description("Initializing Policy")
@@ -158,10 +157,13 @@ class PolicyGradient():
                     actions[b] = state
                 self.match(states, actions)
                 if (i+1) % save_after == 0:
-                    if os.path.exists(self.config.out+"_init-pol.pth"):
-                        os.remove(self.config.out+"_init-pol.pth")
-                    torch.save(self.policy.state_dict(), self.config.out+"_init-pol.pth")
+                    if os.path.exists(self.config.network_out):
+                        os.remove(self.config.network_out)
+                    torch.save(self.policy.state_dict(), self.config.network_out)
                 pbar.update(1)
+        if os.path.exists(self.config.network_out):
+            os.remove(self.config.network_out)
+        torch.save(self.policy.state_dict(), self.config.network_out)
         self.optimizer = torch.optim.Adam(params=self.policy.parameters(),lr=self.config.lr)
 
     def get_returns(self, rewards: np.ndarray):

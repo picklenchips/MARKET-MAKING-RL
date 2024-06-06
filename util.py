@@ -146,7 +146,7 @@ def export_plot(y, ylabel, title, filename):
     ax.plot(times, ys)
     ax.set(xlabel='Training Episode',ylabel=ylabel)
     ax.set_title(title)
-    fig.savefig(filename)
+    plt.savefig(filename)
     plt.close()
 
 """ Used for exponential value functions """

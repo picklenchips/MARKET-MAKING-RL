@@ -17,7 +17,7 @@ if not os.path.exists(INITSAVE):
 
 class Config:
     def __init__(self, obs_dim=5, act_dim=4, rew_dim=2, n_layers=2, layer_size=10, 
-                 lr=0.1, discount=0.99, subtract_time=False, immediate_reward=False,
+                 lr=0.1, discount=0.99, subtract_time=False, immediate_reward=True,
                  discrete=False, use_baseline=True, normalize_advantages=True, 
                  do_ppo = True, eps_clip=0.2, do_clip = True, entropy_coef = 0.00, 
                  nbatch=100, nepoch=1000, nt=10000, dt=1e-3, max_t=0, 

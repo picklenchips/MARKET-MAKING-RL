@@ -20,7 +20,7 @@ parser.add_argument("--noppo", action='store_true', help='dont use PPO, just use
 parser.add_argument("--noadv", action='store_true', help='dont use advantages, just returns')
 parser.add_argument( '--nobookquit','--uniform', action='store_true', help='dont quit early')
 parser.add_argument("--immediate", action='store_true', help='use immediate rewards')
-parser.add_argument("--subtract_time", "--subtime", action='store_true', help='subtract time from reward')
+parser.add_argument("--subtract_time", "-st", action='store_true', help='subtract time from reward')
 
 # TD LAMBDA STUFF?
 parser.add_argument("--td", action='store_true')

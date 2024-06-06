@@ -106,7 +106,7 @@ class MarketMaker:
         nepoch = self.config.ne - self.config.starting_epoch
         with tqdm(total=nepoch*nbatch) as pbar:  # make local pbar instance
             for epoch in range(self.config.starting_epoch, self.config.ne):
-                do_plot = plot_after and epoch + 1 % plot_after == 0
+                do_plot = plot_after and ((epoch + 1) % plot_after == 0)
                 pbar.set_description(f"Epoch {epoch}")
                 #TODO: TD Lambda insertion here
                 paths = self.get_paths(pbar, nb=nbatch, track_all=do_plot)
@@ -308,7 +308,7 @@ class UniformMarketMaker(MarketMaker):
         nepoch = self.config.ne - self.config.starting_epoch
         with tqdm(total=nepoch*nbatch) as pbar:  # make local pbar instance
             for epoch in range(self.config.starting_epoch, self.config.ne):
-                do_plot = plot_after and epoch + 1 % plot_after == 0
+                do_plot = plot_after and ((epoch + 1) % plot_after == 0)
                 pbar.set_description(f"Epoch {epoch}")
                 # Get paths and returns based on trajectory type
                 paths = self.get_paths(pbar, nb=nbatch, track_all=do_plot)

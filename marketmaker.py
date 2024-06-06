@@ -83,7 +83,7 @@ class MarketMaker:
                     wealth.append(W)
                     inventory.append(I)
                     midprices.append(midprice)
-            avg_timestep += t
+            avg_timestep += t+1
             if not terminated:
                 rewards[-1] += self.market.final_reward(W, I, self.market.book.midprice)
             pbar.update(1)
@@ -214,7 +214,7 @@ class MarketMaker:
             if len(f):
                 os.remove(f[-1])
             export_plot(finals,"Final Returns",self.config.full_name,self.config.scores_plot)
-        msg = f'"[EPOCH {epoch}] Returns max: ({np.argmax(finals)}, {np.max(finals)}) and min: ({np.argmin(finals)}, {np.min(finals)})'
+        msg = f'"[EPOCH {epoch}] Returns {finals.shape}. Max: ({np.argmax(finals)}, {np.max(finals)}) and min: ({np.argmin(finals)}, {np.min(finals)})'
         self.logger.info(msg)
 
     def load(self):

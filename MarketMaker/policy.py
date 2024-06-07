@@ -9,7 +9,7 @@ from collections import OrderedDict
 
 
 class BasePolicy:
-    def action_distribution(self, observations):
+    def action_distribution(self, observations: torch.Tensor):
         """
         Args:
             observations: torch.Tensor of shape [batch size, dim(observation space)]
@@ -18,8 +18,8 @@ class BasePolicy:
         """
         raise NotImplementedError
 
-    def act(self, observations, return_log_prob = False):
-        """ Return actions (and log probs)? from action distribution """
+    def act(self, observations: np.ndarray, return_log_prob = False):
+        """ Return np.ndarray actions (and log probs)? from action distribution """
         observations = np2torch(observations)
         distribution = self.action_distribution(observations)
         actions = distribution.sample()
@@ -62,20 +62,20 @@ class BaselineNetwork(nn.Module):
     """
     Class for implementing Baseline network
     """
-    def __init__(self, config):
+    def __init__(self, config: Config):
         super().__init__()
         self.network = build_mlp(config.val_dim, 1, config.n_layers, config.layer_size)
         self.optimizer = torch.optim.Adam(params=self.network.parameters(),lr=config.lr)
     
-    def forward(self, observations):
+    def forward(self, observations: torch.Tensor):
         return self.network(observations).squeeze()
 
-    def calculate_advantage(self, returns, observations):
+    def calculate_advantage(self, returns: np.ndarray, observations: np.ndarray):
         """ Compute advantages given returns """
         observations = np2torch(observations)
         return returns - self.forward(observations).cpu().detach().numpy()
 
-    def update_baseline(self, returns, observations):
+    def update_baseline(self, returns: np.ndarray, observations: np.ndarray):
         """ Gradient baseline to match returns """
         returns = np2torch(returns, True)
         observations = np2torch(observations, True)
@@ -110,7 +110,9 @@ class PolicyGradient():
             self.init_policy(market)
 
     def start_dict(self):
-        """ map obs_dim straight to act_dim linearly """
+        """ map obs_dim straight to act_dim linearly 
+            used to initialize network configurations that 
+            have never been seen before """
         act_dim = self.config.act_dim
         obs_dim = self.config.obs_dim
         n_layers = self.config.n_layers
@@ -136,16 +138,20 @@ class PolicyGradient():
         """ Initialize self.policy network to match intial market """
         network = build_mlp(self.config.obs_dim, self.config.act_dim, self.config.n_layers, self.config.layer_size)
         self.policy = CategoricalPolicy(network) if self.config.discrete else GaussianPolicy(network, self.config.act_dim)
-        self.optimizer = torch.optim.Adam(params=self.policy.parameters(),lr=0.02)
+        self.optimizer = torch.optim.Adam(params=self.policy.parameters(),lr=self.config.lr)
         # load previous policy if it exists
-        if os.path.exists(self.config.network_out) and not new_train:
+        # actually train the policy to match the initial state of the market
+        # so that it learn to place positive n_ask, n_bid first
+        
+        if os.path.exists(self.config.network_out) or not new_train:
             self.policy.load_state_dict(torch.load(self.config.network_out))
-            self.optimizer = torch.optim.Adam(params=self.policy.parameters(),lr=self.config.lr)
             return f'initialized policy from {self.config.network_out}'
-        # INITIALIZE POLICY TO MATCH FIRST OBSERVED STATE
         state_dict = self.start_dict()
         self.policy.load_state_dict(state_dict)
+        if not new_train:
+            return f'initialized policy with default state_dict to {self.config.network_out}'
         save_after = ne/20
+        self.optimizer = torch.optim.Adam(params=self.policy.parameters(),lr=0.02)      
         with tqdm(total=ne) as pbar:
             pbar.set_description("Initializing Policy")
             for i in range(ne):

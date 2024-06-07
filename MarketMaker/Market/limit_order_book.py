@@ -1,5 +1,4 @@
-from util import uFormat, mpl, plt, np
-from util import FIGSIZE, SAVEDIR, SAVEEXT
+from MarketMaker.util import uFormat, mpl, plt, np, FIGSIZE, SAVEDIR, SAVEEXT
 import heapq  # priority queue
 from stochastic.processes.continuous.brownian_motion import BrownianMotion
 import math  # for ceil
@@ -39,6 +38,10 @@ class OrderBook():
         self.worst_bid = 0.01
         self.worst_ask = 100*baseline
         self.n_to_add = n_to_add
+
+    def __str__(self):
+        """ Print the current state """
+        return f"{self.nhigh_bid} x ${uFormat(self.delta_b,0,3)} | {uFormat(self.midprice,0,4)} | {self.nlow_ask} x ${uFormat(self.low_ask,0,3)}"
     
     def copy(self):
         """ Create a copy of the order book """
@@ -189,7 +192,7 @@ class OrderBook():
         # is now lowest sell order, recalculate
         if price == self.asks[0][0]:
             self.recalculate()
-    
+
     def plot(self, wait_time=0.2, title="Order Book", market_order=False, limit_order=False):
         """Make histogram of current limit-orders"""
         fig, ax = plt.subplots(figsize=FIGSIZE)

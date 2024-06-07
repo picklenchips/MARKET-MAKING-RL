@@ -1,4 +1,3 @@
-
 from MarketMaker.util import np, np2torch, torch
 from MarketMaker.Market.limit_order_book import OrderBook as LOB
 from MarketMaker.config import Config
@@ -90,7 +89,6 @@ class BaseMarket():
     def lambda_buy(self, delta, q):
         if not q: return 0
         lambdaa =  np.exp(self.betas[0]+self.betas[1]*np.log(delta)+self.betas[2]*np.log(delta)**2+self.betas[3]*np.log(1+q)+self.betas[4]*np.log(1+q)**2+self.betas[5]*np.log(delta+1+q))
-        print(delta, q, lambdaa)
         return lambdaa
     
     def lambda_sell(self, delta, q):
@@ -108,7 +106,7 @@ class BaseMarket():
                 nbuy  = np.random.poisson(lambda_buy)
                 nsell = np.random.poisson(lambda_sell)
             except ValueError:
-                self.book.print_state()
+                self.config.logger.info(f"Lambda ({lambda_buy}, {lambda_sell}) are too large for book: {self.book}")
                 if plot:
                     return dW, dI, self.book.midprice, (nsell, self.book.high_bid, nbuy, self.book.low_ask)
                 return 0, 0, self.book.midprice

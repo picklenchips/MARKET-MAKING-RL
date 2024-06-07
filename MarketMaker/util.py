@@ -57,19 +57,12 @@ def build_mlp(input_size, output_size, n_layers, hidden_size, activation=nn.ReLU
 
 def get_logger(filename):
     """ Return a logger instance to a file """
-    #if os.path.exists(filename):
-    #    os.remove(filename)
     logger = logging.getLogger("LOG")
     logging.basicConfig(filename=filename, 
                         filemode = 'a',  # add to existing config
                         format='%(asctime)s:%(levelname)s:%(message)s', 
                         datefmt='%m-%d %H:%M',
                         level=logging.DEBUG)
-    # LOL was doing everything twice oops
-    #handler = logging.FileHandler(filename)
-    #handler.setLevel(logging.DEBUG)
-    #handler.setFormatter(logging.Formatter('%(asctime)s:%(name)-12s:%(levelname)-8s:%(message)s'))
-    #logger.addHandler(handler)
     return logger
 
 def normalize(x):
@@ -163,7 +156,7 @@ class Exponential(torch.nn.Module):
         return f'y = -{abs(self.a.item())} * exp(-{abs(self.b.item())} x)'
 
 
-def uFormat(number, uncertainty, round = 0, sig_figs = 4, FormatDecimals = False):
+def uFormat(number, uncertainty, figs = 4, shift = 0, shorten = True):
     """
     V 3.0
     Returns "num_rounded(with_sgnfcnt_dgts_ofuncrtnty)", formatted to 10^round
@@ -172,19 +165,19 @@ def uFormat(number, uncertainty, round = 0, sig_figs = 4, FormatDecimals = False
     Arguments:
     - float number:      the value
     - float uncertainty: the absolute uncertainty (stddev) in the value
-       - if zero, will format number to optional number of sig_figs (see sig_figs)
-    - int round:  optionally, shift the resultant number to a higher/lower digit expression
-       - i.e. if number is in Hz and you want a string in GHz, specify round = 9
-               likewise for going from MHz to Hz, specify round = -6
-    - int sig_figs: when uncertainty = 0, format number to degree of sig figs instead
+       - if zero, will just format number to (figs) sig_figs
+    - int shift:  optionally, shift the resultant number to a higher/lower digit expression
+       - i.e. if number is in Hz and you want a string in GHz, specify shift = 9
+               likewise for going from MHz to Hz, specify shift = -6
+    - int figs: when uncertainty = 0, format number to degree of sig figs instead
        - if zero, will simply return number as string
-    - bool FormatDecimals:  for a number 0.00X < 1e-2, option to express in "X.XXe-D" format
+    - bool shorten:  for a number 0.00X < 1e-2, option to express in "X.XXe-D" format
              for conciseness. doesnt work in math mode because '-' is taken as minus sign
     """
     num = str(number); err = str(uncertainty)
     
     sigFigsMode = not uncertainty    # UNCERTAINTY ZERO: IN SIG FIGS MODE
-    if sigFigsMode and not sig_figs: # nothing to format
+    if sigFigsMode and not figs: # nothing to format
         return num
     
     negative = False  # add back negative later
@@ -274,7 +267,7 @@ def uFormat(number, uncertainty, round = 0, sig_figs = 4, FormatDecimals = False
             print(f'Uncrtnty: {uncertainty} IS MAGNITUDE(S) > THAN Numba: {number}')
         Err = '?'
     if sigFigsMode or nBefore > eBefore:
-        ei = nBefore + sig_figs
+        ei = nBefore + figs
 
     # round number to error
     d = ni - ei 
@@ -295,13 +288,14 @@ def uFormat(number, uncertainty, round = 0, sig_figs = 4, FormatDecimals = False
     
     n = len(Num)
     # if were at <= e-3 == 0.009, save formatting space by removing decimal zeroes
+    # so 0.0099 -> 9.9e-3
     extraDigs = 0
-    if not round and FormatDecimals and (ni-n) >= 2:
-        round -= ni - n + 1
+    if not shift and shorten and (ni-n) >= 2:
+        shift -= ni - n + 1
         extraDigs = ni - n + 1
     
     # shift digits up/down by round argument
-    ni += round
+    ni += shift
     end = ''
     if ni >= n:   # place decimal before any digits
         Num = '0.' + "0"*(ni-n) + Num

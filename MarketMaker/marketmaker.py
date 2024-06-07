@@ -1,4 +1,4 @@
-from util import np, get_logger, torch, plot_WIM, plot_WIM_2, export_plot, np2torch
+from MarketMaker.util import np, get_logger, torch, plot_WIM, plot_WIM_2, export_plot, np2torch
 from tqdm import tqdm
 from glob import glob
 import os, sys
@@ -12,7 +12,7 @@ class UniformMarketMaker():
     def __init__(self, config: Config, inventory=0, wealth=0) -> None:
         self.config = config
         self.market = Market(inventory, wealth, config)
-        self.logger = get_logger(config.log_out)
+        self.logger = self.config.logger
         self.P = Policy(config)
         self.logger.info(self.config)
         self.do_ppo = config.do_ppo

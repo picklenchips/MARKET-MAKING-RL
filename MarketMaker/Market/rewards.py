@@ -1,9 +1,10 @@
-from util import np, np2torch
+from MarketMaker.util import np, np2torch
 from MarketMaker.Market.market import BaseMarket
+from MarketMaker.config import Config
 
 class Market(BaseMarket):
-    def __init__(*kwarg, **kwargs):
-        super().__init__(*kwarg, **kwargs)
+    def __init__(self, inventory: int, wealth: float, config: Config):
+        super().__init__(inventory, wealth, config)
 
     def reward(self, r_state):
         """ 

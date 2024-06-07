@@ -1,5 +1,5 @@
 import logging, os
-from util import np, torch, np2torch, build_mlp, normalize
+from MarketMaker.util import np, torch, np2torch, build_mlp, normalize
 from MarketMaker.Market.rewards import Market
 from MarketMaker.config import Config
 import torch.nn as nn
@@ -92,7 +92,7 @@ class PolicyGradient():
     """
     Class for implementing a policy gradient algorithm
     """
-    def __init__(self, config: Config, market: False | Market) -> None:
+    def __init__(self, config: Config, market = None | Market) -> None:
         """
         Initialize Policy Gradient Class
             - config: class with all parameters
@@ -172,7 +172,11 @@ class PolicyGradient():
 
     def get_returns(self, rewards: np.ndarray | np.ma.MaskedArray) -> np.ndarray | np.ma.MaskedArray:
         """ Classic returns from batched rewards of shape (nb x nt) """
-        returns = np.empty_like(rewards)
+        if isinstance(rewards, np.ma.MaskedArray):
+            returns = np.ma.empty_like(rewards)
+            returns.mask = rewards.mask
+        else:
+            returns = np.empty_like(rewards)
         returns[:, -1] = rewards[:, -1]
         for t in reversed(range(rewards.shape[1]-1)):
             returns[:, t] = rewards[:, t] + self.discount*rewards[:, t+1]

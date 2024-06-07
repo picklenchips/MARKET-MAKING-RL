@@ -1,9 +1,9 @@
 """ Object-oriented configuration file """
 import os, math, pickle
-import logging
 from collections import defaultdict
 from glob import glob
 import argparse
+from MarketMaker.util import get_logger
 
 to_TF = lambda value: "T" if value else "F"
 full_TF = lambda value, label: "no-"+label if not value else label
@@ -16,17 +16,18 @@ if not os.path.exists(INITSAVE):
     os.mkdir(INITSAVE)
 
 class Config:
-    def __init__(self, obs_dim=5, act_dim=4, rew_dim=2, n_layers=2, layer_size=10, 
-                 lr=0.1, discount=0.997, 
+    def __init__(self, obs_dim=5, act_dim=4, rew_dim=2, 
+                 n_layers=2, layer_size=10, lr=0.1, discount=0.997, 
                  subtract_time=False, immediate_reward=False, always_final=True,
-                 discrete=False, use_baseline=True, normalize_advantages=True, 
-                 do_ppo = True, eps_clip=0.2, do_clip = True, entropy_coef = 0.00, 
+                 use_baseline=True, normalize_advantages=True, 
+                 discrete=False, do_ppo = True, 
+                 eps_clip=0.2, do_clip = True, entropy_coef = 0.00, 
                  nbatch=100, nepoch=1000, nt=10000, dt=1e-3, max_t=0, 
                  gamma=1, sigma=1e-2, trajectory='MC', past_obs=2,
                  update_freq=5, lambd=0.9, save_config=False) -> None:
         # network stuff
         self.book_quit = True   # END EARLY IF BOOK IS INVALID
-
+        #TODO: generalize TD lambda to past obs?
         self.past_obs = past_obs  # number of past observations to include
         self.obs_dim = obs_dim  # policy input
         self.act_dim = act_dim  # policy output
@@ -161,6 +162,7 @@ class Config:
         self.values_plot = self.out+'_values.png'
         self.wim_plot    = self.out+'_wim.png'
         self.log_out     = self.base_out+".log"
+        self.logger = get_logger(self.log_out)
         return self.name, self.out
 
 #TODO: just store the .pkl of the configs instead of re-creating from the filename

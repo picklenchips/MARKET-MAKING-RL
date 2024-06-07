@@ -18,7 +18,12 @@ class BaseMarket():
         self.Lambda_s = 20  
         self.K_b = 1  # as K increases, rate w delta decreases
         self.K_s = 1 
-        self.betas = (7.0187, -0.3265, 0.0554, 3.27, 1.16, 0.078)  # ryan's new model
+        # NEW
+        #            intercept,delta,delta^2,(1+q),(1+q)^2,1+q+delta
+        self.betas = (7.0187, -0.3265, 0.0554, -3.27, 1.16, 0.078)  # ryan's new model
+        # OLD
+        self.betas = (7.40417, 0, 0, -3.12017, 0.167814, 0)
+
         # action stuff
         self.sigma = config.sigma
         self.gamma = config.gamma 

@@ -179,8 +179,8 @@ class PolicyGradient():
     def get_returns(self, rewards: np.ndarray | np.ma.MaskedArray) -> np.ndarray | np.ma.MaskedArray:
         """ Classic returns from batched rewards of shape (nb x nt) """
         if isinstance(rewards, np.ma.MaskedArray):
-            returns = np.ma.empty_like(rewards)
-            returns.mask = rewards.mask
+            returns = np.ma.empty(rewards.shape)
+            returns[:] = np.ma.masked
         else:
             returns = np.empty_like(rewards)
         returns[:, -1] = rewards[:, -1]

@@ -35,7 +35,11 @@ def np2torch(x, requires_grad=False, cast_double_to_float=True):
     #mask = 0
     #if isinstance(x, np.ma.masked_array):
     #    mask = torch.from_numpy(x.mask).to(device)
-    if isinstance(x, np.ndarray):
+    if isinstance(x, np.ma.MaskedArray):
+        x = torch.from_numpy(x).to(device)
+        mask = torch.from_numpy(x.mask).to(device)
+        x = torch.masked.as_masked_tensor(x, mask)
+    elif isinstance(x, np.ndarray):
         x = torch.from_numpy(x).to(device)
     else:
         x = torch.Tensor(x).to(device)
@@ -45,6 +49,16 @@ def np2torch(x, requires_grad=False, cast_double_to_float=True):
         x = x.float()
         x.requires_grad = True
     return x
+
+def build_masked_mlp(input_size, output_size, n_layers, hidden_size, activation=nn.ReLU()):
+    """ build a multi-layer perceptron that has an input and output of torch.masked.MaskedTensor """
+    layers = [nn.Linear(input_size,hidden_size),activation]
+    for i in range(n_layers-1):
+        layers.append(nn.Linear(hidden_size,hidden_size))
+        layers.append(activation)
+    layers.append(nn.Linear(hidden_size, output_size))
+    return nn.Sequential(*layers).to(device)
+
 
 def build_mlp(input_size, output_size, n_layers, hidden_size, activation=nn.ReLU()):
     """ Build multi-layer perception with n_layers hidden layers of size hidden_size """
@@ -69,13 +83,13 @@ def normalize(x):
     """ Normalize np.ndarray or torch.Tensor """
     return (x - x.mean()) / (x.std() + 1e-10)
 
-def list_to_masked(arrays: list[list]):
+def arrs_to_masked(arrays: list[list]):
     """
     Returns masked (2d) array from list of arrays of potentially different lengths
     """
     lens = [len(arr) for arr in arrays]
     all_arr = np.ma.empty( (len(arrays), max(lens)) )
-    all_arr.mask = True
+    all_arr[:] = np.ma.masked
     for idx, arr in enumerate(arrays):
         all_arr[idx, :lens[idx]] = np.array(arr)
     return all_arr
@@ -107,9 +121,9 @@ def plot_WIM_2(paths, dt: float, title='', savename=''):
     wealths = [p['wea'] for p in paths]
     inventories = [p['inv'] for p in paths]
     midprices = [p['mid'] for p in paths]
-    wealth = list_to_masked(wealths)
-    inventory = list_to_masked(inventories)
-    midprice = list_to_masked(midprices)
+    wealth = arrs_to_masked(wealths)
+    inventory = arrs_to_masked(inventories)
+    midprice = arrs_to_masked(midprices)
     print(wealth.shape, inventory.shape, midprice.shape)
     times = np.arange(0, wealth.shape[-1]*dt, dt)
     fig, axs = plt.subplots(2,2, figsize=(12,10), sharex=True)
@@ -123,8 +137,9 @@ def plot_WIM_2(paths, dt: float, title='', savename=''):
         ax.fill_between(times, ys - yerrs, ys + yerrs, alpha=0.25, color=f"C{c}")
         ax.plot(times, ys, color=f"C{c}")
         c += 1
-    axs[0,1].set(xlabel="Time")
-    axs[1,1].set(xlabel="Time")
+    for ax in axs[:,0]:
+        ax.set(xlabel="Time")
+        ax.set(xlabel="Time")
     if title: fig.suptitle(title)
     if savename: fig.savefig(savename)
     plt.close()

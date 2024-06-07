@@ -1,10 +1,7 @@
 from MarketMaker.book import OrderBook
 from MarketMaker.util import uFormat, mpl, plt, np, np2torch, build_mlp
 import torch
-import torch.nn as nn
 from tqdm import tqdm
-from scipy import stats
-from glob import glob
 import argparse, os
 
 SAVEDICT = os.getcwd() + '/trained_models/'

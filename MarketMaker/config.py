@@ -17,7 +17,8 @@ if not os.path.exists(INITSAVE):
 
 class Config:
     def __init__(self, obs_dim=5, act_dim=4, rew_dim=2, n_layers=2, layer_size=10, 
-                 lr=0.1, discount=0.99, subtract_time=False, immediate_reward=True,
+                 lr=0.1, discount=0.997, 
+                 subtract_time=False, immediate_reward=False, always_final=True,
                  discrete=False, use_baseline=True, normalize_advantages=True, 
                  do_ppo = True, eps_clip=0.2, do_clip = True, entropy_coef = 0.00, 
                  nbatch=100, nepoch=1000, nt=10000, dt=1e-3, max_t=0, 
@@ -65,6 +66,7 @@ class Config:
         self.do_clip = do_clip            # whether to clip the ratio
         self.entropy_coef = entropy_coef  # PPO entropy coefficient
         self.update_freq = update_freq    # how many times to gradient step in a row
+        self.always_final = always_final  # always add final reward
         if save_config:
             self.set_name(make_new=True)
             self.save()
@@ -127,7 +129,7 @@ class Config:
         ints = [self.ne, self.nb, self.nt]
         floats = []
         b_labs = ["disc", "use-A", "norm-A", "clip", "early", "subT", "imm-R"]
-        bools = [self.discrete, self.use_baseline, self.normalize_advantages, self.do_clip, self.book_quit, self.subtract_time, self.immediate_reward]
+        bools = [self.discrete, self.use_baseline, self.normalize_advantages, self.do_clip, self.book_quit, self.subtract_time, self.immediate_reward, self.always_final]
         name = '_'.join(['-'.join(strs),'-'.join(map(str, ints)),''.join(map(to_TF, bools))])
         full_name = '_'.join(['-'.join(strs),'-'.join(map(str, ints)),'-'.join(map(full_TF, bools, b_labs))])
         # make new directory to store results
@@ -151,8 +153,12 @@ class Config:
         self.full_name = full_name  # used for plotting - translates the bools
         self.base_out = self.save_dir + self.base_name
         self.out  = self.save_dir + name
+        self.val_out = self.out+'_val.pth'
+        self.pol_out = self.out+'_pol.pth'
         self.scores_out  = self.out+'_scores.npy'
         self.scores_plot = self.out+'_scores.png'
+        self.values_out  = self.out+'_values.npy'
+        self.values_plot = self.out+'_values.png'
         self.wim_plot    = self.out+'_wim.png'
         self.log_out     = self.base_out+".log"
         return self.name, self.out

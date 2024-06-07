@@ -17,6 +17,7 @@ import torch.nn as nn
 import logging
 #from torch.masked import masked_tensor
 
+# CONFIGURE MODULES
 # blue = bids, red = asks
 #           |   Blue  |   Red  |  Orange |  Purple | Yellow  |   Green |   Teal  | Grey
 hexcolors = ['648FFF', 'DC267F', 'FE6100', '785EF0', 'FFB000', '009E73', '3DDBD9', '808080']
@@ -56,10 +57,9 @@ def build_mlp(input_size, output_size, n_layers, hidden_size, activation=nn.ReLU
 
 def get_logger(filename):
     """ Return a logger instance to a file """
-    if os.path.exists(filename):
-        os.remove(filename)
+    #if os.path.exists(filename):
+    #    os.remove(filename)
     logger = logging.getLogger("LOG")
-    logger.setLevel(logging.DEBUG)
     logging.basicConfig(filename=filename, 
                         filemode = 'a',  # add to existing config
                         format='%(asctime)s:%(levelname)s:%(message)s', 

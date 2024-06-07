@@ -7,3 +7,6 @@ Using reinforcement learning to make markets in the high-frequency trading setti
 We begin with the simplest assumptions for market dynamics and a utility function, beginning with the theoretical framework outlined in the seminal 2006 paper "[High-frequency trading in a limit order book](https://math.nyu.edu/~avellane/HighFrequencyTrading.pdf)" and moving to more complicated market and utility function models. 
 
 $$e^{asdfasdf}$$
+
+TODO: make this for instructions LOL
+

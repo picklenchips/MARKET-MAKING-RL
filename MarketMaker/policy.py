@@ -1,11 +1,9 @@
-import torch
+import logging, os
+from util import np, torch, np2torch, build_mlp, normalize
+from MarketMaker.Market.rewards import Market
+from MarketMaker.config import Config
 import torch.nn as nn
 import torch.distributions as ptd
-import numpy as np
-from config import Config, INITSAVE
-import logging, os
-from util import np2torch, build_mlp, normalize
-from base_market import Market
 from tqdm import tqdm
 from collections import OrderedDict
 
@@ -94,7 +92,7 @@ class PolicyGradient():
     """
     Class for implementing a policy gradient algorithm
     """
-    def __init__(self, config: Config) -> None:
+    def __init__(self, config: Config, market: False | Market) -> None:
         """
         Initialize Policy Gradient Class
             - config: class with all parameters
@@ -102,8 +100,14 @@ class PolicyGradient():
         self.config = config
         self.discount = config.discount
         # set the baseline (value) network (val_dim -> 1)
-        if config.use_baseline:
-            self.baseline = BaselineNetwork(config)
+        self.baseline = BaselineNetwork(config) if config.use_baseline else None
+        self.eps_clip = self.config.eps_clip
+        self.do_clip = self.config.do_clip
+        self.entropy_coef = self.config.entropy_coef
+        self.do_ppo = self.config.do_ppo
+        # option to intialize policy on startup? why not
+        if market:
+            self.init_policy(market)
 
     def start_dict(self):
         """ map obs_dim straight to act_dim linearly """
@@ -136,9 +140,8 @@ class PolicyGradient():
         # load previous policy if it exists
         if os.path.exists(self.config.network_out) and not new_train:
             self.policy.load_state_dict(torch.load(self.config.network_out))
-            print(f'initialized policy from {self.config.network_out}')
             self.optimizer = torch.optim.Adam(params=self.policy.parameters(),lr=self.config.lr)
-            return
+            return f'initialized policy from {self.config.network_out}'
         # INITIALIZE POLICY TO MATCH FIRST OBSERVED STATE
         state_dict = self.start_dict()
         self.policy.load_state_dict(state_dict)
@@ -165,9 +168,10 @@ class PolicyGradient():
             os.remove(self.config.network_out)
         torch.save(self.policy.state_dict(), self.config.network_out)
         self.optimizer = torch.optim.Adam(params=self.policy.parameters(),lr=self.config.lr)
+        return f'saved policy network to {self.config.network_out}'
 
-    def get_returns(self, rewards: np.ndarray):
-        """ Compute discounted returns from batched rewards of shape (nbatch x nt) """
+    def get_returns(self, rewards: np.ndarray | np.ma.MaskedArray) -> np.ndarray | np.ma.MaskedArray:
+        """ Classic returns from batched rewards of shape (nb x nt) """
         returns = np.empty_like(rewards)
         returns[:, -1] = rewards[:, -1]
         for t in reversed(range(rewards.shape[1]-1)):
@@ -263,15 +267,14 @@ class PolicyGradient():
         self.optimizer.step()
 
 
-class PPO(PolicyGradient):
+class Policy(PolicyGradient):
     def __init__(self, config: Config):
-        config.use_baseline = True
         super().__init__(config)
-        self.eps_clip = self.config.eps_clip
-        self.do_clip = self.config.do_clip
-        self.entropy_coef = self.config.entropy_coef
+        # only difference is using the right update policy function
+        if self.do_ppo:
+            self.update_policy = self.update_policy_ppo
 
-    def update_policy(self, observations, actions, advantages, old_logprobs):
+    def update_policy_ppo(self, observations, actions, advantages, old_logprobs):
         """ Perform one gradient ascent step on the PPO clipped objective function
         Args:
             observations: np.array of shape [batch size, dim(observation space)]

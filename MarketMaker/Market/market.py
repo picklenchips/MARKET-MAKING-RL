@@ -1,17 +1,16 @@
-from limit_order_book import OrderBook
-from util import np, np2torch
-import torch
-from glob import glob
-from config import Config
 
-class Market():
+from MarketMaker.util import np, np2torch, torch
+from MarketMaker.Market.limit_order_book import OrderBook as LOB
+from MarketMaker.config import Config
+
+class BaseMarket():
     """ Market environment """
     def __init__(self, inventory: int, wealth: float, config: Config):
         self.config = config
         self.I = inventory
         self.W = wealth
         # update book later using self.init_book()
-        self.book = OrderBook()
+        self.book = LOB()
     # --- market order parameters --- #
         # OLD
         # alpha is 1.53 for US stocks and 1.4 for NASDAQ stocks
@@ -20,24 +19,26 @@ class Market():
         self.Lambda_s = 20  
         self.K_b = 1  # as K increases, rate w delta decreases
         self.K_s = 1 
-        self.betas = (7.40417, -3.12017, 0.167814)  # ryan's new model
+        self.betas = (7.0187, -0.3265, 0.0554, 3.27, 1.16, 0.078)  # ryan's new model
         # action stuff
         self.sigma = config.sigma
         self.gamma = config.gamma 
         self.max_t = config.max_t  # second
         self.dt    = config.dt   # millisecond
         # reward stuff
-        self.a = 0.01  # how much we weigh dW
-        self.b = 0.1   # how much we weigh dI
-        self.c = 1     # how much we negatively weigh time
+        # max possible wealth change from one market step
+        max_dW = self.book.midprice * 1200
+        self.a = 1/max_dW  # how much we weigh dW
+        self.b = 0.1/self.max_t   # time-weighted inventory change
+        self.c = 1/self.max_t     # how much we negatively weigh time
         self.discount = config.discount
 
-    def reset(self, mid=100, spread=10, nstocks=10000, nsteps=1000, substeps=1, 
+    def reset(self, mid=100, spread=10, nstocks=100000, nsteps=1000, substeps=1, 
               make_bell=True, plot=False):
         """ Randomly initialize order book 
         - nstocks is num stocks on each side """
         if self.book: del(self.book)
-        self.book = OrderBook(mid)
+        self.book = LOB(mid)
         # start with symmetric spread
         # JUST DO A BELL CURVE ON EACH SIDE
         tot_amount = 0
@@ -52,10 +53,9 @@ class Market():
                 tot_amount += nask + nbid
             if plot:
                 self.book.plot(title=', '.join(map(str, self.state())))
-            return
+            if not plot:
+                return
         # start with symmetric spread and market-step
-        self.book.bid(nstocks//2, mid-spread/2)
-        self.book.ask(nstocks//2, mid+spread/2)
         for t in range(nsteps):
             # perform random MARKET ORDERS
             old_book = self.book.copy()
@@ -69,8 +69,8 @@ class Market():
             if state[0] == 0 or state[2] == 0:
                 old_book.recalculate()
                 action = tuple(round(a,2) for a in action)
-                title = f"{t}:{action}: {old_state}->{state}"
-                old_book.plot(title)
+                title = f"{t}:{action}: {tuple(round(a,2) for a in old_state)}->{tuple(round(a,2) for a in state)}"
+                old_book.plot(2, title)
                 break
             old_book = self.book.copy()
             old_state = self.state()
@@ -78,8 +78,8 @@ class Market():
             if state[0] == 0 or state[2] == 0:
                 old_book.recalculate()
                 action = tuple(round(a,2) for a in action)
-                title = f"{t}:{action}: {old_state}->{state}"
-                old_book.plot(title)
+                title = f"{t}:{action}: {tuple(round(a,2) for a in old_state)}->{tuple(round(a,2) for a in state)}"
+                old_book.plot(2, title)
                 break
         self.book.plot()
             
@@ -87,12 +87,14 @@ class Market():
         return self.book.is_empty()
     
 # --- ENVIRONMENT / DYNAMICS --- #
-    def lambda_buy(self, q):
+    def lambda_buy(self, delta, q):
         if not q: return 0
-        return np.exp(self.betas[0]+self.betas[1]*np.log(1+q)+self.betas[2]*np.log(1+q)**2)
+        lambdaa =  np.exp(self.betas[0]+self.betas[1]*np.log(delta)+self.betas[2]*np.log(delta)**2+self.betas[3]*np.log(1+q)+self.betas[4]*np.log(1+q)**2+self.betas[5]*np.log(delta+1+q))
+        print(delta, q, lambdaa)
+        return lambdaa
     
-    def lambda_sell(self, q):
-        return self.lambda_buy(q)
+    def lambda_sell(self, delta, q):
+        return self.lambda_buy(delta, q)
     
     def step(self, nsteps=1, plot=False):
         """ Evolve market order book by updating midprice and placing market orders
@@ -100,8 +102,16 @@ class Market():
         dW = dI = 0
         for step in range(nsteps):
             self.book.update_midprice()  # STEP MIDPRICE
-            nbuy  = np.random.poisson(self.lambda_buy(self.book.nlow_ask))
-            nsell = np.random.poisson(self.lambda_sell(self.book.nhigh_bid))
+            try:
+                lambda_buy = self.lambda_buy(self.book.delta_a, self.book.nlow_ask)
+                lambda_sell = self.lambda_sell(self.book.delta_b, self.book.nhigh_bid)
+                nbuy  = np.random.poisson(lambda_buy)
+                nsell = np.random.poisson(lambda_sell)
+            except ValueError:
+                self.book.print_state()
+                if plot:
+                    return dW, dI, self.book.midprice, (nsell, self.book.high_bid, nbuy, self.book.low_ask)
+                return 0, 0, self.book.midprice
             n_ask_lift, bought = self.book.buy(nbuy)
             n_bid_hit, sold = self.book.sell(nsell)  # 
             dW += bought - sold; dI += n_bid_hit - n_ask_lift
@@ -167,50 +177,13 @@ class Market():
         self.book.bid(n_bid, self.book.midprice - delta_b)
         self.book.ask(n_ask, self.book.midprice + delta_a)
 
-    def reward(self, r_state):
-        """ immediate reward """
-        # dW, dI, time_left = reward_state
-        if not self.config.immediate_reward: 
-            return 0
-        if isinstance(r_state, tuple):
-            r_state = np.array(r_state)
-        if self.config.subtract_time:
-            return self.a*r_state[...,0] + np.exp(-self.b*r_state[...,2]) * np.sign(r_state[...,1]) + self.c*(self.max_t - r_state[...,2])
-        return self.a*r_state[...,0]# + np.exp(-self.b*r_state[...,2]) * np.sign(r_state[...,1])
-    
-    def final_reward(self, W, inventory, midprice):
-        return W + inventory*midprice
-    
-# --- OLD STUFF --- #
-def avellaneda_lambda_buy(self, delta_a):
-    k = self.alpha * self.K_b
-    A = self.Lambda_b / self.alpha
-    return A * np.exp(-k*delta_a)
-
-def avellaneda_lambda_sell(self, delta_b):
-    k = self.alpha * self.K_s
-    A = self.Lambda_s / self.alpha
-    return A * np.exp(-k*delta_b)
-
-def frozen_reward(self, initial_wealth, stock_val, nstocks, time_left):
-    first = -np.exp(-self.gamma*(initial_wealth + nstocks*stock_val))
-    second = np.exp((self.gamma*nstocks*self.sigma)**2 * time_left / 2)
-    return first * second
-
-def reservation_price(self, midprice, inventory, t_left):  # reservation / indifference price
-    return midprice - inventory * self.gamma * self.sigma**2 * t_left
-
-def optimal_spread(self, time_left):
-    return self.gamma * self.sigma**2 * time_left + 2*np.log(1+2*self.gamma/(self.alpha*(self.K_b+self.K_s)))/self.gamma
-
-
-# test market initialization 
-# yuh
-# 
-# uh 
-# oh ?
 if __name__ == "__main__":
+    """ 
+    Test
+    Tha 
+    Market
+    """
     config = Config()
-    M = Market(0, 0, config)
+    M = BaseMarket(0, 0, config)
     for i in range(20):
         M.reset(plot=True, make_bell=True)

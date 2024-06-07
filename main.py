@@ -24,8 +24,8 @@ parser.add_argument("--noadv",  help='dont use advantages, just returns', action
                     )
 parser.add_argument('--uniform', '--nobookquit', '-u',help='dont quit early', action='store_true', 
                     )
-parser.add_argument("--immediate", help='use immediate rewards', action='store_true',)
-parser.add_argument("--subtract_time", "-st", help='subtract time from reward', action='store_true', )
+parser.add_argument("--no-immediate", "-ni", help='dont use immediate rewards', action='store_true',)
+parser.add_argument("--add_time", "-at", help='add time to immediate reward', action='store_true', )
 parser.add_argument("--seed", default=0, type=int)
 # TD LAMBDA STUFF?
 parser.add_argument("--td", "--TD", "-td", action='store_true')
@@ -74,13 +74,13 @@ if __name__ == "__main__":
     
     if config.starting_epoch:
         MM.load()
-        msg = f"\t Resuming {config.name} from epoch {MM.config.starting_epoch}"
+        msg = f"\t Resuming {config.full_name} from epoch {MM.config.starting_epoch}"
         print(msg)
         MM.logger.info(msg)
     if args.plot:
-        print(f"Plotting {config.name}")
+        print(f"Plotting {config.full_name}")
         MM.plot(plot_book=True, nt=800, wait_time=0.5)
     else:  # do training
-        print(f"Training {config.name}")
+        print(f"Training {config.full_name}")
         MM.train(plot_after=100)
         print(f"Training done! Saved to {config.name}")

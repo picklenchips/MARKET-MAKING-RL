@@ -38,14 +38,22 @@ class UniformMarketMaker():
         torch.save(self.P.policy.state_dict(), out+"_pol.pth")
         if os.path.exists(old_out+"_scores.npy"): 
             os.remove(old_out+"_scores.npy")
+        if os.path.exists(old_out+"_values.npy"): 
+            os.remove(old_out+"_values.npy")
         finals = np.array(self.final_returns)
+        values = np.array(self.final_values)
         np.save(self.config.scores_out, finals)
+        np.save(self.config.values_out, values)
         if do_plot:
             f = glob(old_dir+"*_scores.png")
             if len(f):
                 os.remove(f[-1])
+            f = glob(old_dir+"*_values.png")
+            if len(f):
+                os.remove(f[-1])
             export_plot(finals,"Final Returns",self.config.full_name,self.config.scores_plot)
-        msg = f'"[EPOCH {epoch}] Returns {finals.shape}. Max: ({np.argmax(finals)}, {np.max(finals)}) and min: ({np.argmin(finals)}, {np.min(finals)})'
+            export_plot(values,"Final Values",self.config.full_name,self.config.scores_plot)
+        msg = f'[EPOCH {epoch}] Returns {finals.shape}. Max: ({np.argmax(finals)}, {np.max(finals)}) and min: ({np.argmin(finals)}, {np.min(finals)}), values max: {np.max(values)} and min: {np.min(values)}'
         self.logger.info(msg)
 
     def load(self):
@@ -59,6 +67,7 @@ class UniformMarketMaker():
         self.P.policy.load_state_dict(torch.load(name+"_pol.pth"))
         self.logger.info(f"Loaded policy network from {name}_pol.pth")
         self.final_returns = list(np.load(self.config.scores_out))
+        self.final_values = list(np.load(self.config.values_out))
         self.logger.info(f"Loaded scores from {self.config.scores_out}")
     
     def get_paths(self, pbar, nt=None, nb=None, track_all=False):
@@ -167,7 +176,7 @@ class UniformMarketMaker():
 
                 # Plot if required
                 if do_plot:
-                    plot_WIM(paths['wea'], paths['inv'], paths['mid'], self.dt, title=f'epoch {epoch}', savename=self.config.out+'.png')
+                    plot_WIM(paths['wea'], paths['inv'], paths['mid'], self.dt, title=self.config.full_name, savename=self.config.out+'.png')
 
         self.logger.info("Training complete!")  # DONZO BONZO
         self.save(epoch + 1, True)
@@ -214,9 +223,9 @@ class UniformMarketMaker():
             pbar.set_description("Plotting Final Paths...")
             path = self.get_paths(pbar, nt=nt, nb=nb, track_all=True)
             if self.book_quit:
-                plot_WIM_2(path, self.dt, title=f'Final Path, {nb} batches, {self.config.name}', savename=self.config.wim_plot)
+                plot_WIM_2(path, self.dt, title=self.config.name, savename=self.config.wim_plot)
             else:
-                plot_WIM(path['wea'], path['inv'], path['mid'], self.dt, title=f'Final Path (100 batches) {self.config.name}', savename=self.config.wim_plot)
+                plot_WIM(path['wea'], path['inv'], path['mid'], self.dt, title=self.config.name, savename=self.config.wim_plot)
         # plot a single trajectory...
         if plot_book:
             self.plot_book_path(nt=nt, wait_time=wait_time)      
@@ -389,7 +398,7 @@ class MarketMaker(UniformMarketMaker):
                     action = self.market.act(state, self.P.policy.act)
                 dW, dI, midprice = self.market.step()
                 if self.book_quit and self.market.is_empty():
-                    self.logger.info(f'Batch {b} step {t}: Book is empty, quitting trajectory')
+                    #self.logger.info(f'Batch {b} step {t}: Book is empty, quitting trajectory')
                     terminated = True
                     break   # quit if either bids or asks are empty
                 observations.append(state)

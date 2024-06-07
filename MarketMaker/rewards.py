@@ -35,7 +35,7 @@ class Market(BaseMarket):
             return 0
         if isinstance(r_state, tuple):
             r_state = np.array(r_state)
-        if self.config.subtract_time:
+        if self.config.add_time:
             return self.a*r_state[...,0] + np.exp(-self.b*r_state[...,2]) * np.sign(r_state[...,1]) + self.c*(self.max_t - r_state[...,2])
         return self.a*r_state[...,0]
         

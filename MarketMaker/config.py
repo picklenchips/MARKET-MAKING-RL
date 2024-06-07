@@ -18,7 +18,7 @@ if not os.path.exists(INITSAVE):
 class Config:
     def __init__(self, obs_dim=5, act_dim=4, rew_dim=2, 
                  n_layers=2, layer_size=10, lr=0.1, discount=0.997, 
-                 subtract_time=False, immediate_reward=False, always_final=True,
+                 add_time=False, immediate_reward=True, always_final=True,
                  use_baseline=True, normalize_advantages=True, 
                  discrete=False, do_ppo = True, book_quit = True,
                  eps_clip=0.2, do_clip = True, entropy_coef = 0.00, 
@@ -59,7 +59,7 @@ class Config:
         self.use_baseline = use_baseline  # use baseline network to compute actual advantages
         self.normalize_advantages = normalize_advantages  # normalize advantages
         self.discount = discount          # discount for computing returns
-        self.subtract_time = subtract_time  # subtract time from immediate reward
+        self.add_time = add_time  # subtract time from immediate reward
         self.immediate_reward = immediate_reward  # use immediate reward function
         # PPO stuff
         self.do_ppo = do_ppo
@@ -91,7 +91,12 @@ class Config:
         row = rowstart
         i = 0
         for id in stuff:
-            new = f"{id[1]} = {id[2]}, "
+            thing = id[2]
+            if isinstance(thing, str):
+                if thing[-1] == '/':
+                    thing = thing[:-1]
+                thing = thing.split("/")[-1]
+            new = f"{id[1]} = {thing}, "
             if len(row) + len(new) - 2 > charsPerLine or i == thingsPerLine:
                 ret += row[:-2] + '\n'
                 row = rowstart
@@ -129,10 +134,10 @@ class Config:
         strs = [self.trajectory]
         ints = [self.ne, self.nb, self.nt]
         floats = []
-        b_labs = ["disc", "use-A", "norm-A", "clip", "early", "subT", "imm-R"]
-        bools = [self.discrete, self.use_baseline, self.normalize_advantages, self.do_clip, self.book_quit, self.subtract_time, self.immediate_reward, self.always_final]
+        b_labs = ["discrt", "use-A", "norm-A", "clip", "early", "immdt-t-rew", "immdt-rew", "alwys-final"]
+        bools = [self.discrete, self.use_baseline, self.normalize_advantages, self.do_clip, self.book_quit, self.add_time, self.immediate_reward, self.always_final]
         name = '_'.join(['-'.join(strs),'-'.join(map(str, ints)),''.join(map(to_TF, bools))])
-        full_name = '_'.join(['-'.join(strs),'-'.join(map(str, ints)),'-'.join(map(full_TF, bools, b_labs))])
+        full_name = '_'.join(['-'.join(strs),'-'.join(map(str, ints)),'_'.join(map(full_TF, bools, b_labs))])
         # make new directory to store results
         L = len(name)
         i = 0  # duplicate models?
@@ -188,7 +193,7 @@ def config_from_name(pathname: str) -> Config | FileNotFoundError:
     if len(parts[2]) > 4:
         config.book_quit = parts[2][4] == "T"
     if len(parts[2]) > 5:
-        config.subtract_time = parts[2][5] == "T"
+        config.add_time = parts[2][5] == "T"
     if len(parts[2]) > 6:
         config.immediate_reward = parts[2][6] == "T"
     # load from string
@@ -240,9 +245,9 @@ def get_config(args: argparse.ArgumentParser) -> Config:
     if args.noppo: config.do_ppo = False
     if args.noadv: config.use_baseline = False
     if args.noclip: config.do_clip = False
-    if args.immediate: config.immediate_reward = True
+    if args.no_immediate: config.immediate_reward = True
     if args.uniform: config.book_quit = False
-    if args.subtract_time: config.subtract_time = True
+    if args.add_time: config.add_time = True
     
     config.set_name()
     # see if there is an existing plot w the same thing

@@ -142,8 +142,8 @@ class Config:
                 name = name[:L]+str(i)
                 i += 1
             if i: full_name += str(i)
-            if not os.path.exists(f"{SAVEDIR}/{name}"):
-                os.mkdir(f"{SAVEDIR}/{name}")
+        if not os.path.exists(f"{SAVEDIR}/{name}"):
+            os.mkdir(f"{SAVEDIR}/{name}")
         # SET NAMES
         self.base_name = name
         self.save_dir = f"{SAVEDIR}/{name}/"

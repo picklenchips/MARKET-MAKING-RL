@@ -20,13 +20,13 @@ class Config:
                  n_layers=2, layer_size=10, lr=0.1, discount=0.997, 
                  subtract_time=False, immediate_reward=False, always_final=True,
                  use_baseline=True, normalize_advantages=True, 
-                 discrete=False, do_ppo = True, 
+                 discrete=False, do_ppo = True, book_quit = True,
                  eps_clip=0.2, do_clip = True, entropy_coef = 0.00, 
                  nbatch=100, nepoch=1000, nt=10000, dt=1e-3, max_t=0, 
                  gamma=1, sigma=1e-2, trajectory='MC', past_obs=2,
                  update_freq=5, lambd=0.9, save_config=False) -> None:
         # network stuff
-        self.book_quit = True   # END EARLY IF BOOK IS INVALID
+        self.book_quit = book_quit   # END EARLY IF BOOK IS INVALID
         #TODO: generalize TD lambda to past obs?
         self.past_obs = past_obs  # number of past observations to include
         self.obs_dim = obs_dim  # policy input
@@ -75,7 +75,7 @@ class Config:
     def __str__(self):
         """ return string version of config """
         charsPerLine = 70; rowstart = ''
-        thingsPerLine = 1
+        thingsPerLine = 5
         ret = "Config: \n"
         imported_stuff = dir(self)
         type_dict = defaultdict(list)  # list of tuples for each type
@@ -241,7 +241,7 @@ def get_config(args: argparse.ArgumentParser) -> Config:
     if args.noadv: config.use_baseline = False
     if args.noclip: config.do_clip = False
     if args.immediate: config.immediate_reward = True
-    if args.nobookquit: config.book_quit = False
+    if args.uniform: config.book_quit = False
     if args.subtract_time: config.subtract_time = True
     
     config.set_name()

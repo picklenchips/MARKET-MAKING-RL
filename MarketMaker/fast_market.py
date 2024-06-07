@@ -1,4 +1,4 @@
-from MarketMaker.Market.limit_order_book import OrderBook
+from MarketMaker.book import OrderBook
 from MarketMaker.util import uFormat, mpl, plt, np, np2torch, build_mlp
 import torch
 import torch.nn as nn

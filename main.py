@@ -22,7 +22,7 @@ parser.add_argument("--noppo",  help='dont use PPO, just use regular policy grad
                     )
 parser.add_argument("--noadv",  help='dont use advantages, just returns', action='store_true', 
                     )
-parser.add_argument( '--nobookquit','--uniform', help='dont quit early', action='store_true', 
+parser.add_argument('--uniform', '--nobookquit', '-u',help='dont quit early', action='store_true', 
                     )
 parser.add_argument("--immediate", help='use immediate rewards', action='store_true',)
 parser.add_argument("--subtract_time", "-st", help='subtract time from reward', action='store_true', )

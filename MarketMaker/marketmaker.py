@@ -4,7 +4,7 @@ from glob import glob
 import os, sys
 import torch.masked as masked
 from MarketMaker.config import Config
-from MarketMaker.Market.rewards import Market
+from MarketMaker.rewards import Market
 from MarketMaker.policy import Policy
 
 class UniformMarketMaker():
@@ -106,6 +106,11 @@ class UniformMarketMaker():
                     action = self.market.act(state, self.P.policy.act)
                 actions[b, t] = action
                 dW, dI, midprice = self.market.step()   # (dW, dI, midprice)
+                if dW is ValueError:
+                    lambda_sell = dI; lambda_buy = midprice
+                    print(f"Batch {b} step {t} INVALID lambdas, ({lambda_sell}, {lambda_buy}), on book {self.market.book}")
+                    self.market.reset(plot=True, make_bell=True)
+                    continue
                 reward_state = (dW, dI) + time_left
                 rewards[b, t] = self.market.reward(reward_state)
                 trajectories[b, t] = state + (dW, dI)
@@ -125,6 +130,7 @@ class UniformMarketMaker():
             paths["wea"] = wealth
             paths["inv"] = inventory
             paths["mid"] = midprices
+        self.logger.info(f"found paths of shape {paths['tra'].shape}")
         return paths
 
     def train(self, plot_after=False):
@@ -139,6 +145,7 @@ class UniformMarketMaker():
                 pbar.set_description(f"Epoch {epoch}")
                 # Get paths and returns based on trajectory type
                 paths = self.get_paths(pbar, nb=nbatch, track_all=do_plot)
+                self.logger.info(f"found trajectories of shape {paths['tra'].shape}")
                 if self.config.trajectory == 'MC':
                     returns = self.P.get_returns(paths['rew'])
                 elif self.config.trajectory == 'TD':
@@ -331,9 +338,11 @@ class MarketMaker(UniformMarketMaker):
     def __init__(self, config: Config, inventory=0, wealth=0) -> None:
         super().__init__(config, inventory, wealth)
         self.book_quit = config.book_quit  # quit if book is empty
+        self.config.logger.info(f"book_quit: {self.book_quit}")
         if config.book_quit:
             self.train = self.sparse_train
             self.get_paths = self.get_sparse_paths
+            self.config.logger.info('using sparse training!')
     
     def get_sparse_paths(self, pbar, nt=0, nb=0, track_all=False) -> list[dict[list]]:
         """ get trajectories and compute rewards, only observing immediate state
@@ -426,7 +435,7 @@ class MarketMaker(UniformMarketMaker):
                 paths = self.get_paths(pbar, nb=nbatch, track_all=do_plot)
                 # combine all the trajectories into a single batch tensor
                 # size (batch_size **) x dim
-                trajectories = np.concatenate([path['tra'] for path in paths])
+                trajectories = np.concatenate([path['tra'] for path in paths], axis=0)
                 observations = np.concatenate([path['obs'] for path in paths])
                 actions = np.concatenate([path['act'] for path in paths])
                 values = [path['val'] for path in paths]

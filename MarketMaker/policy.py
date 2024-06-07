@@ -1,6 +1,6 @@
 import logging, os
 from MarketMaker.util import np, torch, np2torch, build_mlp, normalize
-from MarketMaker.Market.rewards import Market
+from MarketMaker.rewards import Market
 from MarketMaker.config import Config
 import torch.nn as nn
 import torch.distributions as ptd

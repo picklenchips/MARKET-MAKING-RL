@@ -1,5 +1,9 @@
-from MarketMaker.book import OrderBook
-from MarketMaker.util import uFormat, mpl, plt, np, np2torch, build_mlp
+try:
+    from MarketMaker.book import OrderBook
+    from MarketMaker.util import uFormat, mpl, plt, np, np2torch, build_mlp
+except ModuleNotFoundError:
+    from book import OrderBook
+    from util import uFormat, mpl, plt, np, np2torch, build_mlp
 import torch
 from tqdm import tqdm
 import argparse, os

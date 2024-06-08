@@ -3,7 +3,10 @@ import os, math, pickle
 from collections import defaultdict
 from glob import glob
 import argparse
-from MarketMaker.util import get_logger
+try:
+    from MarketMaker.util import get_logger
+except ModuleNotFoundError:
+    from util import get_logger
 
 to_TF = lambda value: "T" if value else "F"
 full_TF = lambda value, label: "no-"+label if not value else label
@@ -18,8 +21,8 @@ if not os.path.exists(INITSAVE):
 class Config:
     def __init__(self, obs_dim=5, act_dim=4, rew_dim=2, 
                  n_layers=2, layer_size=10, lr=0.1, discount=0.997, 
-                 add_time=False, immediate_reward=True, always_final=True,
-                 use_baseline=True, normalize_advantages=True, 
+                 immediate_reward=True, add_time=False, always_final=False, add_inventory=False,
+                 use_baseline=True, normalize_advantages=True,
                  discrete=False, do_ppo = True, book_quit = True,
                  eps_clip=0.2, do_clip = True, entropy_coef = 0.00, 
                  nbatch=100, nepoch=1000, nt=10000, dt=1e-3, max_t=0, 
@@ -56,6 +59,7 @@ class Config:
         self.sigma = sigma  # avellaneda param 
         self.gamma = gamma  # avellaneda param
         # reward stuff
+        self.add_inventory = add_inventory  # add inventory to immediate reward
         self.use_baseline = use_baseline  # use baseline network to compute actual advantages
         self.normalize_advantages = normalize_advantages  # normalize advantages
         self.discount = discount          # discount for computing returns
@@ -134,10 +138,23 @@ class Config:
         strs = [self.trajectory]
         ints = [self.ne, self.nb, self.nt]
         floats = []
-        b_labs = ["discrt", "use-A", "norm-A", "clip", "early", "immdt-t-rew", "immdt-rew", "alwys-final"]
+        pol_str = "gaus-" if not self.discrete else "categ-"
+        pol_str += "reinforce" if not self.do_ppo else ("ppo-clip" if self.do_clip else "ppo")
+        pol_str += "-rets" if not self.use_baseline else ("-norm-adv" if self.normalize_advantages else "-adv")
+        rew_str = "liquid" if self.always_final else ""
+        if self.immediate_reward:
+            if self.always_final: rew_str += "-"
+            rew_str += "W"
+            if self.add_inventory:
+                rew_str += "-I"
+            if self.add_time:
+                rew_str += "-T"
+        bool_strs = [pol_str, rew_str]
         bools = [self.discrete, self.use_baseline, self.normalize_advantages, self.do_clip, self.book_quit, self.add_time, self.immediate_reward, self.always_final]
+        # OLD NAME
         name = '_'.join(['-'.join(strs),'-'.join(map(str, ints)),''.join(map(to_TF, bools))])
-        full_name = '_'.join(['-'.join(strs),'-'.join(map(str, ints)),'_'.join(map(full_TF, bools, b_labs))])
+        # NEW NAME
+        name = '_'.join(['-'.join(strs),'-'.join(map(str, ints)),'_'.join(bool_strs)])
         # make new directory to store results
         L = len(name)
         i = 0  # duplicate models?
@@ -146,7 +163,6 @@ class Config:
             while os.path.exists(f"{SAVEDIR}/{name}/{self.ne}_{name}_pol.pth"):
                 name = name[:L]+str(i)
                 i += 1
-            if i: full_name += str(i)
         if not os.path.exists(f"{SAVEDIR}/{name}"):
             os.mkdir(f"{SAVEDIR}/{name}")
         # SET NAMES
@@ -154,9 +170,7 @@ class Config:
         self.save_dir = f"{SAVEDIR}/{name}/"
         if epoch:   # number of epochs completed
             name = f"{epoch}_" + name
-            full_name = f"{epoch}_" + full_name
         self.name = name
-        self.full_name = full_name  # used for plotting - translates the bools
         self.base_out = self.save_dir + self.base_name
         self.out  = self.save_dir + name
         self.val_out = self.out+'_val.pth'
@@ -186,16 +200,20 @@ def config_from_name(pathname: str) -> Config | FileNotFoundError:
         parts = parts[1:]
     config.trajectory = parts[0]
     config.ne, config.nb, config.nt = map(int, parts[1].split("-"))
-    config.discrete = parts[2][0] == "T"
-    config.use_baseline = parts[2][1] == "T"
-    config.normalize_advantages = parts[2][2] == "T"
-    config.do_clip = parts[2][3] == "T"
-    if len(parts[2]) > 4:
-        config.book_quit = parts[2][4] == "T"
-    if len(parts[2]) > 5:
-        config.add_time = parts[2][5] == "T"
-    if len(parts[2]) > 6:
-        config.immediate_reward = parts[2][6] == "T"
+    pol_str = parts[2]
+    config.discrete = not "gaus" in pol_str
+    config.do_ppo = "ppo" in pol_str
+    config.do_clip = "clip" in pol_str
+    config.normalize_advantages = "norm" in pol_str
+    config.use_baseline = "adv" in pol_str
+    if len(parts) > 3:
+        rew_str = parts[3]
+        config.always_final = "liquid" in rew_str
+        config.immediate_reward = "W" in rew_str
+        config.add_inventory = "I" in rew_str
+        config.add_time = "T" in rew_str
+    else:
+        config.always_final = config.immediate_reward = False
     # load from string
     config.set_name(config.starting_epoch)
     return config
@@ -208,59 +226,66 @@ def search_for_config(filepath: str) -> Config | bool:
     for f in glob(filepath):
         # first, look for pickle files
         if f[-4] == ".pkl":
-            return Config().load(f)
+            return Config().load(f), True
         if os.path.isdir(f):
             if f[-1] != "/":
                 f += "/"
             for f1 in glob(f+"*_config.pkl"):
-                return Config().load(f1)
+                return Config().load(f1), True
             try: 
-                return config_from_name(f)
+                return config_from_name(f), False
             except FileNotFoundError:
                 pass
         else:
             dirabove = '/'.join(f.split('/')[:-1])
             try:
-                return config_from_name(dirabove)
+                return config_from_name(dirabove), False
             except FileNotFoundError:
                 pass
-    return False
+    return False, False
 
 def get_config(args: argparse.ArgumentParser) -> Config:
     """ Load a configuration from a filename """
-    config = False; pathname = ''
+    config = False
     if not args: return Config()
     if args.load:  # load a model from a filepath directory
         # FIRST, LOOK FOR PKL FILES
-        config = search_for_config(args.load)
+        config, found_pkl = search_for_config(args.load)
         if not config:
             raise FileNotFoundError(f"Could not find config file from {args.load}")
+        if not found_pkl:
+            config.save()
         return config
     # SET DEFAULT CONFIG
-    config = Config(save_config=False)
+    config = Config(save_config=False, do_ppo=(not args.noppo), use_baseline = (not args.noadv), do_clip=(not args.noclip),
+                    immediate_reward=(not args.no_immediate), book_quit=(not args.uniform), add_inventory=args.add_inventory,
+                    add_time=args.add_time, always_final=args.always_final)
     if args.td: config.trajectory = 'TD'
     if args.nb: config.nb = args.nb
     if args.nt: config.nt = args.nt
     if args.ne: config.ne = args.ne
-    if args.noppo: config.do_ppo = False
-    if args.noadv: config.use_baseline = False
-    if args.noclip: config.do_clip = False
-    if args.no_immediate: config.immediate_reward = True
-    if args.uniform: config.book_quit = False
-    if args.add_time: config.add_time = True
     
     config.set_name()
     # see if there is an existing plot w the same thing
-    if oldconfig := search_for_config(config.save_dir):
-        if args.resume or args.plot or (oldconfig.starting_epoch and oldconfig.starting_epoch < oldconfig.ne):
-            oldconfig.set_name(oldconfig.starting_epoch)
-            return oldconfig
-    elif args.resume or args.plot:
-        return FileNotFoundError(f"Could not find config file to resume from {config.base_name}")
+    # make_new = make new directory if directory exists
+    oldconfig, found_pkl = search_for_config(config.save_dir)
+    make_new = not (args.resume or args.plot)
+    print(oldconfig.name)
     if oldconfig:
         config = oldconfig
-    config.set_name(make_new=True)
-    config.save()
+        config.set_name(config.starting_epoch)
+        make_new = make_new and not (config.starting_epoch and config.starting_epoch < config.ne)
+    policypath = glob(config.save_dir+"/*_pol.pth")
+    if len(policypath):
+        policypath = policypath[0]
+        config.starting_epoch = int(policypath.split("/")[-1].split("_")[0])
+    if config.starting_epoch == config.ne:
+        config.set_name(0,make_new=make_new)
+        config.save()
+    else:
+        config.set_name(config.starting_epoch)
+    if not found_pkl:
+        config.save()
     return config
 
 # test config naming

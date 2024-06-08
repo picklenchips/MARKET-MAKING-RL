@@ -1,6 +1,11 @@
-from MarketMaker.util import np, np2torch, torch
-from MarketMaker.book import OrderBook as LOB
-from MarketMaker.config import Config
+try:
+    from MarketMaker.util import np, np2torch, torch
+    from MarketMaker.book import OrderBook as LOB
+    from MarketMaker.config import Config
+except ModuleNotFoundError:
+    from util import np, np2torch, torch
+    from book import OrderBook as LOB
+    from config import Config
 
 class BaseMarket():
     """ Market environment """
@@ -31,14 +36,14 @@ class BaseMarket():
         self.dt    = config.dt   # millisecond
         # reward stuff
         # max possible wealth change from one market step
-        max_dW = self.book.midprice * 1200
+        max_dW = self.book.midprice * 1500
         self.a = 1/max_dW  # how much we weigh dW
-        self.b = 0.1/self.max_t   # time-weighted inventory change
-        self.c = 1/self.max_t     # how much we negatively weigh time
+        self.b = 10/self.max_t   # time-weighted inventory change
+        self.c = 1/self.max_t    # how much we negatively weigh time
         self.discount = config.discount
 
-    def reset(self, mid=100, spread=10, nstocks=100000, nsteps=1000, substeps=1, 
-              make_bell=True, plot=False):
+    def reset(self, mid=100, spread=10, nstocks=10000, nsteps=1000, substeps=1, 
+              make_bell=True, plot=False, step_through=0):
         """ Randomly initialize order book 
         - nstocks is num stocks on each side """
         if self.book: del(self.book)
@@ -56,7 +61,7 @@ class BaseMarket():
                 self.book.ask(nask, mid+delta_a)
                 tot_amount += nask + nbid
             if plot:
-                self.book.plot(title=', '.join(map(str, self.state())))
+                self.book.plot(title="pre: "+str(tuple( map(lambda x: round(x,2), self.state()) )),wait_time=0)
             if not plot:
                 return
         # start with symmetric spread and market-step
@@ -64,28 +69,33 @@ class BaseMarket():
             # perform random MARKET ORDERS
             old_book = self.book.copy()
             old_state = self.state()
-            dW, dI, mid = self.step(substeps)
+            if plot or step_through:
+                dW, dI, mid, market_act = self.step(substeps, plot)
+            else:
+                dW, dI, mid = self.step(substeps)
             state  = self.state()
-            if state[0] == 0 or state[2] == 0:
-                print("OOF: ",state)
-            # perform random LIMIT ORDERS using naive action
-            state = self.state()
-            if state[0] == 0 or state[2] == 0:
+            if step_through:
+                action = self.act(state)
+                final_state = self.state()
+                title = f"{tuple(round(s,2) for s in old_state)} | M:{tuple(round(a,2) for a in market_act)} -> {tuple(round(a,2) for a in state)} | A:{tuple(round(a,2) for a in action)} -> {tuple(round(a,2) for a in final_state)}"
+                old_book.plot(step_through, title, market_order=market_act, limit_order=action)
+                continue
+            # only plot when the market becomes empty
+            if ((state[0] == 0 or state[2] == 0) and plot):
                 old_book.recalculate()
                 action = tuple(round(a,2) for a in action)
-                title = f"{t}:{action}: {tuple(round(a,2) for a in old_state)}->{tuple(round(a,2) for a in state)}"
-                old_book.plot(2, title)
+                title = f"MARKET {t}{tuple(round(a,2) for a in market_act)}: {tuple(round(a,2) for a in old_state)}->{tuple(round(a,2) for a in state)}"
+                old_book.plot(0, title, market_order=market_act)
                 break
             old_book = self.book.copy()
             old_state = self.state()
             action = self.act(state)
-            if state[0] == 0 or state[2] == 0:
+            if (state[0] == 0 or state[2] == 0) and plot:
                 old_book.recalculate()
-                action = tuple(round(a,2) for a in action)
-                title = f"{t}:{action}: {tuple(round(a,2) for a in old_state)}->{tuple(round(a,2) for a in state)}"
-                old_book.plot(2, title)
+                title = f"AGENT {t}{tuple(round(a,2) for a in action)}: {tuple(round(a,2) for a in old_state)}->{tuple(round(a,2) for a in state)}"
+                old_book.plot(0, title, limit_order=action)
                 break
-        self.book.plot()
+        self.book.plot(0, title='final state')
             
     def is_empty(self):
         return self.book.is_empty()
@@ -102,7 +112,8 @@ class BaseMarket():
     def step(self, nsteps=1, plot=False):
         """ Evolve market order book by updating midprice and placing market orders
         - returns change in wealth, inventory (dW, dI) """
-        dW = dI = 0
+        dW = dI = tot_ask_lift = tot_bid_hit = 0
+        low_ask = self.book.low_ask; high_bid = self.book.high_bid
         for step in range(nsteps):
             self.book.update_midprice()  # STEP MIDPRICE
             try:
@@ -117,8 +128,9 @@ class BaseMarket():
             n_ask_lift, bought = self.book.buy(nbuy)
             n_bid_hit, sold = self.book.sell(nsell)  # 
             dW += bought - sold; dI += n_bid_hit - n_ask_lift
+            tot_ask_lift += n_ask_lift; tot_bid_hit  += n_bid_hit
         if plot:  # for limit order plotting purposes
-            return dW, dI, self.book.midprice, (n_bid_hit, self.book.high_bid, n_ask_lift, self.book.low_ask)
+            return dW, dI, self.book.midprice, (tot_bid_hit, high_bid, tot_ask_lift, low_ask)
         return dW, dI, self.book.midprice
 
 # --- STATES / ACTIONS --- #
@@ -188,4 +200,4 @@ if __name__ == "__main__":
     config = Config()
     M = BaseMarket(0, 0, config)
     for i in range(20):
-        M.reset(plot=True, make_bell=True)
+        M.reset(plot=True, make_bell=True, step_through=0.2)

@@ -1,4 +1,7 @@
-from MarketMaker.util import uFormat, mpl, plt, np, FIGSIZE, SAVEDIR, SAVEEXT
+try:
+    from MarketMaker.util import uFormat, mpl, plt, np, FIGSIZE, SAVEDIR, SAVEEXT
+except ModuleNotFoundError:
+    from util import uFormat, mpl, plt, np, FIGSIZE, SAVEDIR, SAVEEXT
 import heapq  # priority queue
 from stochastic.processes.continuous.brownian_motion import BrownianMotion
 import math  # for ceil
@@ -16,11 +19,13 @@ class OrderBook():
       - lowest ask tracked as (self.low_ask, self.nlow_ask)
     also stores an evolving self.midprice self.midprice, self.spread, self.delta_b, self.delta_a
     """
-    def __init__(self, baseline=100, n_to_add=100):
+    def __init__(self, baseline=100, n_to_add=100) -> None:
         # keep track of limit orders
         self.bids = []
         self.asks = []
         # and their relevant pricing dynamics
+        self.high_bid = self.nhigh_bid = 0
+        self.low_ask  = self.nlow_ask  = 0
         self.midprice = 0
         self.spread   = 0
         self.delta_b  = 0
@@ -39,11 +44,11 @@ class OrderBook():
         self.worst_ask = 100*baseline
         self.n_to_add = n_to_add
 
-    def __str__(self):
+    def __str__(self) -> str:
         """ Print the current state """
         return f"{self.nhigh_bid} x ${uFormat(self.delta_b,0,3)} | {uFormat(self.midprice,0,4)} | {self.nlow_ask} x ${uFormat(self.low_ask,0,3)}"
     
-    def copy(self):
+    def copy(self) -> 'OrderBook':
         """ Create a copy of the order book """
         new_book = OrderBook(self.baseline, self.n_to_add)
         new_book.bids = self.bids.copy()
@@ -58,12 +63,12 @@ class OrderBook():
         """ Check if there are either no bids or no asks """
         return not (len(self.bids) and len(self.asks))
     
-    def update_midprice(self):
+    def update_midprice(self) -> None:
         """ Update midprice of market """
         self.midprice += self.model._sample_brownian_motion(1)[1]
         self.recalculate()
 
-    def recalculate(self):
+    def recalculate(self) -> None:
         """ Recalculate self.midprice and self.spread """
         self.spread = 0
         self.delta_b = self.delta_a = 0
@@ -71,18 +76,19 @@ class OrderBook():
         self.nlow_ask = self.nhigh_bid = 0
         if len(self.asks):
             self.low_ask, self.nlow_ask = self.asks[0]
+            self.delta_a = self.low_ask - self.midprice
             if len(self.bids):
-                self.high_bid = -self.bids[0][0]; self.nhigh_bid = self.bids[0][1]
+                self.high_bid, self.nhigh_bid = -self.bids[0][0], self.bids[0][1]
                 # symmetric midprice
                 # self.midprice = (self.low_ask + self.high_bid)/2
 # MAKE SURE DELTA_A AND DELTA_B ARE POSITIVE
                 while self.high_bid > self.midprice:
-                    price, n = heapq.heappop(self.bids)
+                    heapq.heappop(self.bids)
                     if len(self.bids) == 0:   # ran out of bids??
                         self.bid(self.n_to_add, round(self.midprice,2) - 0.01)
                     self.high_bid, self.nhigh_bid = -self.bids[0][0], self.bids[0][1]
                 while self.low_ask < self.midprice:
-                    price, n = heapq.heappop(self.asks)
+                    heapq.heappop(self.asks)
                     if len(self.asks) == 0:  # ran out of asks??
                         self.ask(self.n_to_add, round(self.midprice,2) + 0.01)
                     self.low_ask, self.nlow_ask = self.asks[0]
@@ -93,8 +99,9 @@ class OrderBook():
                     print("ERROR: unrealistic spread!!")
         elif len(self.bids):
             self.high_bid, self.nhigh_bid = -self.bids[0][0], self.bids[0][1]
+            self.delta_b = self.midprice - self.high_bid
 
-    def buy(self, volume: int, maxprice=0.0):
+    def buy(self, volume: int, maxprice=0.0) -> tuple[int, float]:
         """ Buy (up to) volume stocks to lowest-priced limit-sell (ask) orders
         returns tuple of int: num stocks bought,
                          list of (price, n_stocks) orders that have been bought
@@ -117,13 +124,10 @@ class OrderBook():
                 do_update = True
             volume -= n
         # disencentivize running out of asks - you paid someone to buy your stock
-        if volume > 0 and not len(self.asks):
-            total_bought = -1
-            n_bought     = 1
         if do_update: self.recalculate()
         return n_bought, total_bought
 
-    def sell(self, volume: int, minprice=0.0):
+    def sell(self, volume: int, minprice=0.0) -> tuple[int, float]:
         """Sell (up to) volume stocks to highest-priced limit-buy (bid) orders
         optionally, only sell stocks valued above min price"""
         n_sold = total_sold = 0; do_update = False
@@ -145,13 +149,10 @@ class OrderBook():
                 do_update = True
             volume -= n
         # disencentivize running out of bids - you paid someone and gave them your stock
-        if volume > 0 and not len(self.bids):
-            total_sold = -1
-            n_sold     = 1
         if do_update: self.recalculate()
         return n_sold, total_sold
 
-    def bid(self, volume: int, price: float):
+    def bid(self, volume: int, price: float) -> None:
         """ Add a limit-buy order. Sorted highest-to-lowest """
         price = round(price, 2)  # can only buy/sell in cents
         if volume == 0:
@@ -172,7 +173,7 @@ class OrderBook():
         if price == -self.bids[0][0]:
             self.recalculate()
 
-    def ask(self, volume: int, price: float):
+    def ask(self, volume: int, price: float) -> None:
         """ Add a limit-sell order """
         price = round(price, 2)  # can only buy/sell in cents
         if volume == 0:
@@ -216,38 +217,41 @@ class OrderBook():
                 highest_ask = max([a[0] for a in self.asks])
                 arange = max(highest_ask - self.low_ask,0.01)
                 abins = nbins
-                ax.hist([s[0] for s in self.asks], weights = [s[1] for s in self.asks], bins=abins,label='Asks',edgecolor='black',linewidth=0.5)
+                ax.hist([s[0] for s in self.asks], weights = [s[1] for s in self.asks], bins=abins,label='Asks',edgecolor='black',linewidth=0.5, color='C1')
             elif len(self.bids):
                 lowest_bid  = min([-b[0] for b in self.bids])
                 brange = max(self.high_bid - lowest_bid,0.01)
                 bbins = nbins
-                ax.hist([-b[0] for b in self.bids], weights = [b[1] for b in self.bids], bins=bbins,label='Bids',edgecolor='black',linewidth=0.5)
+                ax.hist([-b[0] for b in self.bids], weights = [b[1] for b in self.bids], bins=bbins,label='Bids',edgecolor='black',linewidth=0.5, color='C0')
         # set plotting stuff
         if self.midprice:  # add dashed line for midprice
             lowy, highy = ax.get_ylim()
             ax.plot([self.midprice,self.midprice],[lowy,highy*0.8],linestyle='dashed',color='black')
-            if not market_order:
-                title += f" [{round(self.midprice,2)}, ({uFormat(self.delta_b,0)}, {uFormat(self.delta_a,0)})]"
+            text = f" [{round(self.midprice,2)}, ({uFormat(self.delta_b,0)}, {uFormat(self.delta_a,0)})]"
+            ax.text(self.midprice, highy*0.8, text, ha='center', va='bottom', rotation=0)
         if not isinstance(market_order, bool):  # plot market orders
             # market_order = (-n_bid, bid, -n_ask, ask)
-            if market_order[0]:
+            if market_order[0] and market_order[1]:
                 width = brange/bbins
-                ax.hist([market_order[1]], weights = [-market_order[0]], bins = [market_order[1]-width/2,market_order[1]+width/2], edgecolor='black', linewidth=1, color=f'C{3}')  # purple for bid-hitting
-            if market_order[2]:
+                ax.hist([market_order[1]], weights = [-market_order[0]], bins = [market_order[1]-width/2,market_order[1]+width/2], edgecolor='black', linewidth=1, color='C3', linestyle='dotted')  # purple for bid-hitting
+            if market_order[2] and market_order[3]:
                 width = arange/abins
-                ax.hist([market_order[3]], weights = [-market_order[2]], bins = [market_order[3]-width/2,market_order[3]+width/2], edgecolor='black', linewidth=1, color=f'C{2}')  # orange for ask-lifting
+                ax.hist([market_order[3]], weights = [-market_order[2]], bins = [market_order[3]-width/2,market_order[3]+width/2], edgecolor='black', linewidth=1, color='C2', linestyle='dotted')  # orange for ask-lifting
         if not isinstance(limit_order, bool):  # agent action
             # limit_order = (n_bid, bid, n_ask, ask)
-            if limit_order[0]:
+            if limit_order[0] and limit_order[1]:
                 width = brange/bbins
-                ax.hist([limit_order[1]], weights = [limit_order[0]], bins = [market_order[1]-width/2,market_order[1]+width/2], edgecolor='black', linewidth=1, color=f'C{3}')
-            if limit_order[2]:
+                ax.hist([limit_order[1]], weights = [limit_order[0]], bins = [market_order[1]-width/2,market_order[1]+width/2], edgecolor='black', linewidth=1, color='C3', linestyle='dashed')
+            if limit_order[2] and limit_order[3]:
                 width = arange/abins
-                ax.hist([limit_order[3]], weights = [limit_order[2]], bins = [market_order[3]-width/2,market_order[3]+width/2], edgecolor='black', linewidth=1, color=f'C{2}')
+                ax.hist([limit_order[3]], weights = [limit_order[2]], bins = [market_order[3]-width/2,market_order[3]+width/2], edgecolor='black', linewidth=1, color='C2', linestyle='dashed')
         plt.title(title)
         plt.legend(loc='upper center',ncol=2)
-        plt.show(block=False)
-        plt.pause(wait_time)
+        if wait_time:
+            plt.show(block=False)
+            plt.pause(wait_time)
+        else:
+            plt.show()
         plt.close()
 
 # we getting Pythonic up in this

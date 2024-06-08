@@ -1,6 +1,11 @@
-from MarketMaker.util import np, np2torch
-from MarketMaker.market import BaseMarket
-from MarketMaker.config import Config
+try:
+    from MarketMaker.util import np, np2torch
+    from MarketMaker.market import BaseMarket
+    from MarketMaker.config import Config
+except ModuleNotFoundError:
+    from util import np, np2torch
+    from market import BaseMarket
+    from config import Config
 
 class Market(BaseMarket):
     def __init__(self, inventory: int, wealth: float, config: Config):
@@ -35,9 +40,12 @@ class Market(BaseMarket):
             return 0
         if isinstance(r_state, tuple):
             r_state = np.array(r_state)
+        reward = self.a*r_state[...,0]
+        if self.config.add_inventory:
+            reward += np.exp(-self.b*r_state[...,2]) * np.sign(r_state[...,1])
         if self.config.add_time:
-            return self.a*r_state[...,0] + np.exp(-self.b*r_state[...,2]) * np.sign(r_state[...,1]) + self.c*(self.max_t - r_state[...,2])
-        return self.a*r_state[...,0]
+            reward += self.c*(self.max_t - r_state[...,2])
+        return reward
         
     def final_reward(self, wealth, inventory, midprice):
         return wealth+inventory*midprice

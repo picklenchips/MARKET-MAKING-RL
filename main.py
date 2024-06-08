@@ -9,23 +9,25 @@ parser.add_argument("-l", "--load",   help='load a model from a results/name dir
 parser.add_argument("-r", "--resume", action='store_true', help='resume training from a model')
 parser.add_argument("-p", "--plot", action='store_true', help='dont train, just plot')
 
-parser.add_argument("--policy", help='use noppo to turn ppo off. use discrete to use discrete instead of \
-                                      gaussian probability', default='ppo')
+parser.add_argument("--policy", help='use noppo to turn ppo off. use discrete for categorical instead of \
+                                      gaussian policy', default='ppo')
 parser.add_argument("-ne", "--ne", help="number of epochs to train policy for", type=int)
 parser.add_argument("-nb", "--nb", help="number of trajectories to sample for each policy update", type=int)
 parser.add_argument("-nt", "--nt", help="number of timesteps to progress trajectory for", type=int)
 parser.add_argument("-lr", "--lr", help="learning rate for the policy (Adam) optimizer", type=float)
 parser.add_argument("-opt", "--optimizer", help="String name for the optimizer (like Adam, AdamW, SGD... case sensitive)", type=float)
-parser.add_argument("--noclip", help='dont clip the ratio in PPO', action='store_true', 
+parser.add_argument("--noclip", "-nc", help='dont clip the ratio in PPO', action='store_true', 
                     )
-parser.add_argument("--noppo",  help='dont use PPO, just use regular policy grad', action='store_true', 
+parser.add_argument("--noppo", '-np', help='dont use PPO, just use regular policy grad', action='store_true', 
                     )
 parser.add_argument("--noadv",  help='dont use advantages, just returns', action='store_true', 
                     )
-parser.add_argument('--uniform', '--nobookquit', '-u',help='dont quit early', action='store_true', 
+parser.add_argument('--uniform', '--nobookquit', '-u', help='dont quit early', action='store_true', 
                     )
 parser.add_argument("--no-immediate", "-ni", help='dont use immediate rewards', action='store_true',)
-parser.add_argument("--add_time", "-at", help='add time to immediate reward', action='store_true', )
+parser.add_argument("--add-time", "-at", help='add time to immediate reward', action='store_true', )
+parser.add_argument("--add-inventory", "-ai", help='add inventory to immediate reward', action='store_true', )
+parser.add_argument("--always-final", "-af", help='always liquidate at termination', action='store_true', )
 parser.add_argument("--seed", default=0, type=int)
 # TD LAMBDA STUFF?
 parser.add_argument("--td", "--TD", "-td", action='store_true')
@@ -74,13 +76,13 @@ if __name__ == "__main__":
     
     if config.starting_epoch:
         MM.load()
-        msg = f"\t Resuming {config.full_name} from epoch {MM.config.starting_epoch}"
+        msg = f"\t Resuming {config.name} from epoch {MM.config.starting_epoch}"
         print(msg)
         MM.logger.info(msg)
     if args.plot:
-        print(f"Plotting {config.full_name}")
+        print(f"Plotting {config.name}")
         MM.plot(plot_book=True, nt=800, wait_time=0.5)
     else:  # do training
-        print(f"Training {config.full_name}")
+        print(f"Training {config.name}")
         MM.train(plot_after=100)
         print(f"Training done! Saved to {config.name}")

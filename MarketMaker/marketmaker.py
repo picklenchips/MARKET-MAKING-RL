@@ -1,11 +1,17 @@
-from MarketMaker.util import np, get_logger, torch, plot_WIM, plot_WIM_2, export_plot, np2torch
+try:
+    from MarketMaker.util import np, get_logger, torch, plot_WIM, export_plot, np2torch
+    from MarketMaker.config import Config
+    from MarketMaker.rewards import Market
+    from MarketMaker.policy import Policy
+except ModuleNotFoundError:
+    from util import np, get_logger, torch, plot_WIM, export_plot, np2torch
+    from config import Config
+    from rewards import Market
+    from policy import Policy
 from tqdm import tqdm
 from glob import glob
 import os, sys
 import torch.masked as masked
-from MarketMaker.config import Config
-from MarketMaker.rewards import Market
-from MarketMaker.policy import Policy
 
 class UniformMarketMaker():
     """ a market maker with uniform time steps for all trajectories """
@@ -24,7 +30,7 @@ class UniformMarketMaker():
         self.final_returns = []  # track returns during training
         self.final_values  = []  # track values during training
 
-    def save(self, epoch, do_plot=False):
+    def save(self, epoch, final_epoch=False):
         """ Save a trained market maker model """
         old_out = self.config.out
         old_dir = self.config.save_dir
@@ -36,6 +42,7 @@ class UniformMarketMaker():
         if os.path.exists(old_out+"_pol.pth"):
             os.remove(old_out+"_pol.pth")
         torch.save(self.P.policy.state_dict(), out+"_pol.pth")
+        # save final returns and final values
         if os.path.exists(old_out+"_scores.npy"): 
             os.remove(old_out+"_scores.npy")
         if os.path.exists(old_out+"_values.npy"): 
@@ -44,15 +51,13 @@ class UniformMarketMaker():
         values = np.array(self.final_values)
         np.save(self.config.scores_out, finals)
         np.save(self.config.values_out, values)
-        if do_plot:
-            f = glob(old_dir+"*_scores.png")
-            if len(f):
-                os.remove(f[-1])
-            f = glob(old_dir+"*_values.png")
-            if len(f):
-                os.remove(f[-1])
-            export_plot(finals,"Final Returns",self.config.full_name,self.config.scores_plot)
-            export_plot(values,"Final Values",self.config.full_name,self.config.scores_plot)
+        # plot final returns and final values
+        if os.path.exists(old_out+"_scores.png"):
+            os.remove(old_out+"_scores.png")
+        if os.path.exists(old_out+"_values.png"):
+            os.remove(old_out+"_values.png")
+        export_plot(finals,"Final Returns",self.config.name,self.config.scores_plot)
+        export_plot(values,"Final Values",self.config.name,self.config.values_plot)
         msg = f'[EPOCH {epoch}] Returns {finals.shape}. Max: ({np.argmax(finals)}, {np.max(finals)}) and min: ({np.argmin(finals)}, {np.min(finals)}), values max: {np.max(values)} and min: {np.min(values)}'
         self.logger.info(msg)
 
@@ -94,12 +99,14 @@ class UniformMarketMaker():
         trajectories = np.empty((nbatch, nt, val_dim))
         actions = np.empty((nbatch, nt, act_dim))
         rewards = np.empty((nbatch, nt))
+        values  = np.empty((nbatch,))
         if self.do_ppo:
             logprobs = np.empty((nbatch, nt))
         if track_all:  # track all for later plotting?
             wealth = np.empty((nbatch, nt))
             inventory = np.empty((nbatch, nt),dtype=int)
-            midprices = np.empty((nbatch, nt))
+            # track book state  (midprice, delta_b, delta_a)
+            states = np.empty((nbatch, nt, 3))
         for b in range(nbatch):
             self.market.reset()
             W = self.market.W; I = self.market.I
@@ -119,27 +126,27 @@ class UniformMarketMaker():
                     lambda_sell = dI; lambda_buy = midprice
                     print(f"Batch {b} step {t} INVALID lambdas, ({lambda_sell}, {lambda_buy}), on book {self.market.book}")
                     self.market.reset(plot=True, make_bell=True)
-                    continue
+                    break
                 reward_state = (dW, dI) + time_left
                 rewards[b, t] = self.market.reward(reward_state)
                 trajectories[b, t] = state + (dW, dI)
+                W += dW; I += dI
                 if track_all:
-                    W += dW; I += dI
                     wealth[b, t] = W
                     inventory[b, t] = I
-                    midprices[b, t] = midprice
-            rewards[b, t] += self.market.final_reward(W, I, self.market.book.midprice)
-            if pbar:
-                pbar.update(1)
+                    states[b, t] = (midprice, midprice-self.market.book.delta_b, midprice+self.market.book.delta_a)
+            rewards[b, t] += self.market.final_reward(W, I, midprice)
+            values[b] = W + I*midprice
+            if pbar: pbar.update(1)
         observations = trajectories[...,:obs_dim]
-        paths = {"tra": trajectories, "obs": observations, "act": actions, "rew": rewards}
+        paths = {"tra": trajectories, "obs": observations, "act": actions, "rew": rewards, "val": values}
         if self.do_ppo:
             paths["old"] = logprobs
         if track_all:
             paths["wea"] = wealth
             paths["inv"] = inventory
-            paths["mid"] = midprices
-        self.logger.info(f"found paths of shape {paths['tra'].shape}")
+            paths["book"] = states
+        self.logger.info(f"generated trajectories of shape {paths['tra'].shape}")
         return paths
 
     def train(self, plot_after=False):
@@ -172,11 +179,11 @@ class UniformMarketMaker():
 
                 # Log the returns
                 self.final_returns.append(returns[:, -1])
-                self.save(epoch + 1, do_plot)   # intermediately save the market maker for later loading
+                self.save(epoch + 1)   # intermediately save the market maker for later loading
 
                 # Plot if required
                 if do_plot:
-                    plot_WIM(paths['wea'], paths['inv'], paths['mid'], self.dt, title=self.config.full_name, savename=self.config.out+'.png')
+                    plot_WIM(paths, self.dt, title=self.config.name, savename=self.config.out+'.png')
 
         self.logger.info("Training complete!")  # DONZO BONZO
         self.save(epoch + 1, True)
@@ -218,14 +225,12 @@ class UniformMarketMaker():
         """ plot final scores and final sample path """
         nb = nb if nb else self.config.nb
         nb = nt if nt else self.config.nt
-        export_plot(np.array(self.final_returns),"Final Returns",self.config.full_name,self.config.scores_plot)
+        export_plot(np.array(self.final_returns),"Final Returns",self.config.name,self.config.scores_plot)
+        export_plot(np.array(self.values),"Final Values",self.config.name,self.config.values_plot)
         with tqdm(total=nb) as pbar:
             pbar.set_description("Plotting Final Paths...")
-            path = self.get_paths(pbar, nt=nt, nb=nb, track_all=True)
-            if self.book_quit:
-                plot_WIM_2(path, self.dt, title=self.config.name, savename=self.config.wim_plot)
-            else:
-                plot_WIM(path['wea'], path['inv'], path['mid'], self.dt, title=self.config.name, savename=self.config.wim_plot)
+            paths = self.get_paths(pbar, nt=nt, nb=nb, track_all=True)
+            plot_WIM(paths, self.dt, title=self.config.name, savename=self.config.wim_plot)
         # plot a single trajectory...
         if plot_book:
             self.plot_book_path(nt=nt, wait_time=wait_time)      
@@ -301,7 +306,7 @@ class MasketMarketMaker(UniformMarketMaker):
         if track_all:
             paths["wea"] = wealth
             paths["inv"] = inventory
-            paths["mid"] = midprices
+            paths["book"] = midprices
         return paths
 
     def masked_train(self, plot_after=False):
@@ -333,11 +338,11 @@ class MasketMarketMaker(UniformMarketMaker):
 
                 # Log the returns
                 self.final_returns.append(returns[:, -1])
-                self.save(epoch + 1, do_plot)   # intermediately save the market maker for later loading
+                self.save(epoch + 1)   # intermediately save the market maker for later loading
 
                 # Plot if required
                 if do_plot:
-                    plot_WIM(paths['wea'], paths['inv'], paths['mid'], self.dt, title=f'epoch {epoch}', savename=self.config.out+'.png')
+                    plot_WIM(paths, self.dt, title=f'epoch {epoch}', savename=self.config.out+'.png')
 
         self.logger.info("Training complete!")  # DONZO BONZO
         self.save(epoch + 1, True)
@@ -376,7 +381,7 @@ class MarketMaker(UniformMarketMaker):
         avg_timestep = 0
         for b in range(nbatch):
             self.market.reset()
-            W = self.market.W; I = self.market.I
+            W = self.market.W; I = self.market.I; midprice = 0
             trajectories = []
             observations = []
             actions = []
@@ -396,7 +401,16 @@ class MarketMaker(UniformMarketMaker):
                     self.market.submit(*action)
                 else:
                     action = self.market.act(state, self.P.policy.act)
+                if self.book_quit and self.market.is_empty():
+                    #self.logger.info(f'Batch {b} step {t}: Book is empty, quitting trajectory')
+                    terminated = True
+                    break   # quit if either bids or asks are empty
                 dW, dI, midprice = self.market.step()
+                if dW is ValueError:
+                    lambda_sell = dI; lambda_buy = midprice
+                    print(f"Batch {b} step {t} INVALID lambdas, ({lambda_sell}, {lambda_buy}), on book {self.market.book}")
+                    self.market.reset(plot=True, make_bell=True)
+                    break
                 if self.book_quit and self.market.is_empty():
                     #self.logger.info(f'Batch {b} step {t}: Book is empty, quitting trajectory')
                     terminated = True
@@ -407,26 +421,26 @@ class MarketMaker(UniformMarketMaker):
                 reward_state = (dW, dI) + time_left
                 rewards.append(self.market.reward(reward_state))
                 trajectories.append(state + (dW, dI))
+                W += dW; I += dI
                 if track_all:
-                    W += dW; I += dI
                     wealth.append(W)
                     inventory.append(I)
-                    midprices.append(midprice)
-            avg_timestep += t+1
+                    midprices.append((midprice, midprice-self.market.book.delta_b, midprice+self.market.book.delta_a))
             if not terminated or self.config.always_final:
                 if len(rewards):
                     rewards[-1] += self.market.final_reward(W, I, self.market.book.midprice)
                 else:
                     rewards = [self.market.final_reward(W, I, self.market.book.midprice)]
             pbar.update(1)
-            path = {"tra": trajectories, "obs": observations, "act": actions, "rew": rewards, "val": W+I*self.market.book.midprice}
+            path = {"tra": trajectories, "obs": observations, "act": actions, "rew": rewards, "val": W+I*midprice}
             if self.do_ppo:
                 path["old"] = logprobs
             if track_all:
                 path["wea"] = wealth
                 path["inv"] = inventory
-                path["mid"] = midprices
+                path["book"] = midprices
             paths.append(path)
+            avg_timestep += t+1
         avg_timestep /= nbatch
         self.logger.info(f"Average trajectory length: {avg_timestep}")
         return paths
@@ -440,16 +454,12 @@ class MarketMaker(UniformMarketMaker):
             for epoch in range(self.config.starting_epoch, self.config.ne):
                 do_plot = plot_after and ((epoch + 1) % plot_after == 0)
                 pbar.set_description(f"Epoch {epoch+1}")
-                #TODO: TD Lambda insertion here
                 paths = self.get_paths(pbar, nb=nbatch, track_all=do_plot)
-                # combine all the trajectories into a single batch tensor
-                # size (batch_size **) x dim
                 trajectories = np.concatenate([path['tra'] for path in paths], axis=0)
                 observations = np.concatenate([path['obs'] for path in paths])
                 actions = np.concatenate([path['act'] for path in paths])
                 values = [path['val'] for path in paths]
                 if self.do_ppo: logprobs = np.concatenate([path['old'] for path in paths])
-                
                 if self.config.trajectory == 'MC':
                     returns, finals = self.P.get_uneven_returns(paths)
                 elif self.config.trajectory == 'TD':
@@ -472,7 +482,7 @@ class MarketMaker(UniformMarketMaker):
                 self.save(epoch+1, do_plot)   # intermediately save the market maker for later loading
 
                 if do_plot:
-                    plot_WIM_2(paths, self.dt, title=f'epoch {epoch}', savename=self.config.out+'.png')
+                    plot_WIM(paths, self.dt, title=f'epoch {epoch}', savename=self.config.out+'.png')
         self.logger.info("DONZO BONZO!")
         self.save(epoch+1, True)
         self.plot()

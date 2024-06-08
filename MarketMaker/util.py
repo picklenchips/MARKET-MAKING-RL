@@ -72,11 +72,12 @@ def build_mlp(input_size, output_size, n_layers, hidden_size, activation=nn.ReLU
 def get_logger(filename):
     """ Return a logger instance to a file """
     logger = logging.getLogger("LOG")
+    # log only info things, no debug
     logging.basicConfig(filename=filename, 
                         filemode = 'a',  # add to existing config
                         format='%(asctime)s:%(levelname)s:%(message)s', 
                         datefmt='%m-%d %H:%M',
-                        level=logging.DEBUG)
+                        level=logging.INFO)
     return logger
 
 def normalize(x):
@@ -94,54 +95,54 @@ def arrs_to_masked(arrays: list[list]):
         all_arr[idx, :lens[idx]] = np.array(arr)
     return all_arr
 
-def plot_WIM(wealth: np.ndarray, inventory: np.ndarray, midprices: np.ndarray, dt: float, title='', savename=''):
-    """ plot data from a batch of trajectories
-    Inputs: (nbatch x nt) np.ndarrays """
-    times = np.arange(0, wealth.shape[-1]*dt, dt)
-    fig, axs = plt.subplots(2,2, figsize=(12,10))
-    value =  wealth + inventory*midprices
-    c = 0
-    for i, y, name in zip(((0,0),(0,1),(1,0),(1,1)),(wealth, inventory, midprices,value),('Wealth', 'Inventory', 'Midprice', 'Value')):
-        ax = axs[i]
-        ax.set(ylabel=name)
-        ys = y.mean(axis = 0)
-        yerrs = y.std(axis = 0)/np.sqrt(y.shape[-1])
-        ax.fill_between(times, ys - yerrs, ys + yerrs, alpha=0.25, color=f"C{c}")
-        ax.plot(times, ys, color=f"C{c}")
-    axs[0,1].set(xlabel="Time")
-    axs[1,1].set(xlabel='Time')
-    if title: fig.suptitle(title)
-    if savename: plt.savefig(savename)
-    plt.close()
-    #plt.show()
+def plot_trajectory(x, y, ax, color):
+    ''' plot trajectory of form (nbatch x nt) '''
+    ys = y.mean(axis = 0)
+    yerrs = y.std(axis = 0)/np.sqrt(y.shape[-1])
+    ax.fill_between(x, ys - yerrs, ys + yerrs, alpha=0.25, color=color)
+    ax.plot(x, ys, color=color)
 
-def plot_WIM_2(paths, dt: float, title='', savename=''):
+def plot_WIM(paths, dt: float, title='', savename=''):
     """ plot data from a batch of trajectories
     Inputs: (nbatch x nt) np.ndarrays """
-    wealths = [p['wea'] for p in paths]
-    inventories = [p['inv'] for p in paths]
-    midprices = [p['mid'] for p in paths]
-    wealth = arrs_to_masked(wealths)
-    inventory = arrs_to_masked(inventories)
-    midprice = arrs_to_masked(midprices)
-    print(wealth.shape, inventory.shape, midprice.shape)
+    if isinstance(paths, dict):  # when not using book_quit
+        wealth = paths['wea']
+        inventory = paths['inv']
+        states = paths['book']
+        mids = states[...,0]; high_bids = states[...,1]; low_asks = states[...,2]
+    else:   # when using book_quit with variable-length trajectories, convert to masked array for plotting
+        wealth    = arrs_to_masked([p['wea'] for p in paths])
+        inventory = arrs_to_masked([p['inv'] for p in paths])
+        mids      = arrs_to_masked([p['book'][:,0] for p in paths])
+        high_bids = arrs_to_masked([p['book'][:,1] for p in paths])
+        low_asks  = arrs_to_masked([p['book'][:,2] for p in paths])
+    # states is nbatch x nt x (midprice, highest_bid, lowest_ask)
     times = np.arange(0, wealth.shape[-1]*dt, dt)
-    fig, axs = plt.subplots(2,2, figsize=(12,10), sharex=True)
-    value = wealth + inventory*midprice
+    fig, axs = plt.subplots(1,3, figsize=(12,10), sharex=True)
     c = 0
-    for i, y, name in zip(((0,0),(0,1),(1,0),(1,1)),(wealth, inventory, midprice, value),('Wealth', 'Inventory', 'Midprice','Value')):
-        ax = axs[i]
-        ax.set(ylabel=name)
-        ys = y.mean(axis = 0)
-        yerrs = y.std(axis = 0)/np.sqrt(y.shape[-1])
-        ax.fill_between(times, ys - yerrs, ys + yerrs, alpha=0.25, color=f"C{c}")
-        ax.plot(times, ys, color=f"C{c}")
-        c += 1
-    for ax in axs[:,0]:
-        ax.set(xlabel="Time")
-        ax.set(xlabel="Time")
+    # plot states
+    ax = axs[0]
+    ax.set(ylabel='Order Book')
+    plot_trajectory(times, mids, ax, 'C3')
+    plot_trajectory(times, high_bids, ax, 'C0')
+    plot_trajectory(times, low_asks, ax, 'C1')
+    # plot wealth and inventory on same x axis
+    ax = axs[1]
+    ax.set(ylabel='Wealth', color='C5')
+    plot_trajectory(times, wealth, ax, 'C5')
+    inv_ax = ax.twinx()
+    inv_ax.set(ylabel='Inventory', color='C2')
+    plot_trajectory(times, inventory, inv_ax, 'C2')
+    # plot total value
+    ax = axs[2]
+    ax.set(ylabel='Total Value', xlabel='Time (s)')
+    value = wealth + inventory*mids
+    plot_trajectory(times, value, ax, 'C6')
     if title: fig.suptitle(title)
-    if savename: fig.savefig(savename)
+    if savename: 
+        fig.savefig(savename)
+    else: 
+        plt.show()
     plt.close()
 
 def export_plot(y, ylabel, title, filename):

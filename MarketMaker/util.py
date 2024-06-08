@@ -93,6 +93,24 @@ def arrs_to_masked(arrays: list[list]):
     all_arr[:] = np.ma.masked
     for idx, arr in enumerate(arrays):
         all_arr[idx, :lens[idx]] = np.array(arr)
+    # mask any np.inf or np.nan values
+    all_arr = np.ma.masked_invalid(all_arr)
+    return all_arr
+
+def arrs_to_masked_3d(arrays: list[list[list]]):
+    """
+    Returns masked (3d) array from list of arrays of potentially different lengths
+    """
+    lens = [len(arr) for arr in arrays]
+    try:
+        sublens = [[len(arr) for arr in arrays] for arrays in arrays]
+    except TypeError:   # a 2D array was passed in instead of a 3d one?
+        return arrs_to_masked(arrays)
+    all_arr = np.ma.empty( (len(arrays), max(lens), max(sublens)) )
+    all_arr[:] = np.ma.masked
+    for idx, arrs in enumerate(arrays):
+        for jdx, arr in enumerate(arrs):
+            all_arr[idx, :lens[idx], :sublens[idx][jdx]] = np.array(arr)
     return all_arr
 
 def plot_trajectory(x, y, ax, color):
@@ -117,7 +135,6 @@ def plot_WIM(paths, dt: float, title='', savename=''):
         mids      = arrs_to_masked([[i[0] for i in traj] for traj in states])
         high_bids = arrs_to_masked([[i[1] for i in traj] for traj in states])
         low_asks  = arrs_to_masked([[i[2] for i in traj] for traj in states])
-        print(mids.shape, high_bids.shape, low_asks.shape)
     # states is nbatch x nt x (midprice, highest_bid, lowest_ask)
     times = np.arange(0, wealth.shape[-1]*dt, dt)
     fig, axs = plt.subplots(3,1, figsize=(12,10), sharex=True)

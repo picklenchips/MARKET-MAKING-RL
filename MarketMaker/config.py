@@ -20,14 +20,15 @@ if not os.path.exists(INITSAVE):
 
 class Config:
     def __init__(self, obs_dim=5, act_dim=4, rew_dim=2, 
-                 n_layers=2, layer_size=10, lr=0.1, discount=0.997, 
+                 n_layers=2, layer_size=10, lr=0.1, discount=0.9999, 
                  immediate_reward=True, add_time=False, always_final=False, add_inventory=False,
                  use_baseline=True, normalize_advantages=True,
                  discrete=False, do_ppo = True, book_quit = True,
                  eps_clip=0.2, do_clip = True, entropy_coef = 0.00, 
                  nbatch=100, nepoch=1000, nt=10000, dt=1e-3, max_t=0, 
                  gamma=1, sigma=1e-2, trajectory='MC', past_obs=2,
-                 update_freq=5, lambd=0.9, save_config=False) -> None:
+                 update_freq=5, lambd=0.9, save_config=False,
+                 plot_intermediate=True) -> None:
         # network stuff
         self.book_quit = book_quit   # END EARLY IF BOOK IS INVALID
         #TODO: generalize TD lambda to past obs?
@@ -72,6 +73,8 @@ class Config:
         self.entropy_coef = entropy_coef  # PPO entropy coefficient
         self.update_freq = update_freq    # how many times to gradient step in a row
         self.always_final = always_final  # always add final reward
+
+        self.plot_intermediate = plot_intermediate  # plot intermediate results after every epoch
         if save_config:
             self.set_name(make_new=True)
             self.save()
@@ -175,9 +178,9 @@ class Config:
         self.out  = self.save_dir + name
         self.val_out = self.out+'_val.pth'
         self.pol_out = self.out+'_pol.pth'
-        self.scores_out  = self.out+'_scores.npy'
+        self.scores_out  = self.out+'_scores.npz'
         self.scores_plot = self.out+'_scores.png'
-        self.values_out  = self.out+'_values.npy'
+        self.values_out  = self.out+'_values.npz'
         self.values_plot = self.out+'_values.png'
         self.wim_plot    = self.out+'_wim.png'
         self.log_out     = self.base_out+".log"

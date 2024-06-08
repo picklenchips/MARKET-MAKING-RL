@@ -1,10 +1,10 @@
-try:
-    from MarketMaker.util import np, get_logger, torch, plot_WIM, export_plot, np2torch
+try:  # run from outside of the folder
+    from MarketMaker.util import np, torch, plot_WIM, export_plot, np2torch, arrs_to_masked
     from MarketMaker.config import Config
     from MarketMaker.rewards import Market
     from MarketMaker.policy import Policy
-except ModuleNotFoundError:
-    from util import np, get_logger, torch, plot_WIM, export_plot, np2torch
+except ModuleNotFoundError:   # run from within the folder
+    from util import np, torch, plot_WIM, export_plot, np2torch, arrs_to_masked
     from config import Config
     from rewards import Market
     from policy import Policy
@@ -43,22 +43,23 @@ class UniformMarketMaker():
             os.remove(old_out+"_pol.pth")
         torch.save(self.P.policy.state_dict(), out+"_pol.pth")
         # save final returns and final values
-        if os.path.exists(old_out+"_scores.npy"): 
-            os.remove(old_out+"_scores.npy")
-        if os.path.exists(old_out+"_values.npy"): 
-            os.remove(old_out+"_values.npy")
-        finals = np.array(self.final_returns)
-        values = np.array(self.final_values)
-        np.save(self.config.scores_out, finals)
-        np.save(self.config.values_out, values)
+        if os.path.exists(old_out+"_scores.npz"): 
+            os.remove(old_out+"_scores.npz")
+        if os.path.exists(old_out+"_values.npz"): 
+            os.remove(old_out+"_values.npz")
+        finals = arrs_to_masked(self.final_returns)
+        values = arrs_to_masked(self.final_values)
+        np.savez_compressed(self.config.scores_out, data=finals, mask=finals.mask)
+        np.savez_compressed(self.config.values_out, data=values, mask=values.mask)
         # plot final returns and final values
-        if os.path.exists(old_out+"_scores.png"):
-            os.remove(old_out+"_scores.png")
-        if os.path.exists(old_out+"_values.png"):
-            os.remove(old_out+"_values.png")
-        export_plot(finals,"Final Returns",self.config.name,self.config.scores_plot)
-        export_plot(values,"Final Values",self.config.name,self.config.values_plot)
-        msg = f'[EPOCH {epoch}] Returns {finals.shape}. Max: ({np.argmax(finals)}, {np.max(finals)}) and min: ({np.argmin(finals)}, {np.min(finals)}), values max: {np.max(values)} and min: {np.min(values)}'
+        if self.config.plot_intermediate:
+            if os.path.exists(old_out+"_scores.png"):
+                os.remove(old_out+"_scores.png")
+            if os.path.exists(old_out+"_values.png"):
+                os.remove(old_out+"_values.png")
+            export_plot(finals,"Final Returns",self.config.name,self.config.scores_plot)
+            export_plot(values,"Final Values",self.config.name,self.config.values_plot)
+        msg = f'[EPOCH {epoch}] Returns {finals.shape}. Max: ({np.argmax(finals)}, {round(np.max(finals))}) and min: ({np.argmin(finals)}, {round(np.min(finals))}), values max: {np.max(values)} and min: {round(np.min(values))}'
         self.logger.info(msg)
 
     def load(self):
@@ -71,8 +72,8 @@ class UniformMarketMaker():
             self.logger.info(f"Loaded baseline network from {name}_val.pth")
         self.P.policy.load_state_dict(torch.load(name+"_pol.pth"))
         self.logger.info(f"Loaded policy network from {name}_pol.pth")
-        self.final_returns = list(np.load(self.config.scores_out))
-        self.final_values = list(np.load(self.config.values_out))
+        self.final_returns = [list(final) for final in np.load(self.config.scores_out)]
+        self.final_values = [list(value) for value in np.load(self.config.values_out)]
         self.logger.info(f"Loaded scores from {self.config.scores_out}")
     
     def get_paths(self, pbar, nt=None, nb=None, track_all=False):
@@ -415,13 +416,13 @@ class MarketMaker(UniformMarketMaker):
                     #self.logger.info(f'Batch {b} step {t}: Book is empty, quitting trajectory')
                     terminated = True
                     break   # quit if either bids or asks are empty
+                W += dW; I += dI
                 observations.append(state)
                 actions.append(action)
                 if self.do_ppo: logprobs.append(logprob)
                 reward_state = (dW, dI) + time_left
                 rewards.append(self.market.reward(reward_state))
-                trajectories.append(state + (dW, dI))
-                W += dW; I += dI
+                trajectories.append(state + (W, I))
                 if track_all:
                     wealth.append(W)
                     inventory.append(I)
@@ -432,6 +433,8 @@ class MarketMaker(UniformMarketMaker):
                 else:
                     rewards = [self.market.final_reward(W, I, self.market.book.midprice)]
             pbar.update(1)
+            if not len(trajectories):
+                continue
             path = {"tra": trajectories, "obs": observations, "act": actions, "rew": rewards, "val": W+I*midprice}
             if self.do_ppo:
                 path["old"] = logprobs

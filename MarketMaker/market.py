@@ -36,10 +36,7 @@ class BaseMarket():
         self.dt    = config.dt   # millisecond
         # reward stuff
         # max possible wealth change from one market step
-        max_dW = self.book.midprice * 1500
-        self.a = 1/max_dW  # how much we weigh dW
-        self.b = 10/self.max_t   # time-weighted inventory change
-        self.c = 1/self.max_t    # how much we negatively weigh time
+        
         self.discount = config.discount
 
     def reset(self, mid=100, spread=10, nstocks=10000, nsteps=1000, substeps=1, 

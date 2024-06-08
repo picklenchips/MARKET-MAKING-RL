@@ -28,6 +28,7 @@ parser.add_argument("--no-immediate", "-ni", help='dont use immediate rewards', 
 parser.add_argument("--add-time", "-at", help='add time to immediate reward', action='store_true', )
 parser.add_argument("--add-inventory", "-ai", help='add inventory to immediate reward', action='store_true', )
 parser.add_argument("--always-final", "-af", help='always liquidate at termination', action='store_true', )
+parser.add_argument("--plot-after", "-pa", help='plot the market after this many epochs', type=int, default=100)
 parser.add_argument("--seed", default=0, type=int)
 # TD LAMBDA STUFF?
 parser.add_argument("--td", "--TD", "-td", action='store_true')
@@ -84,5 +85,5 @@ if __name__ == "__main__":
         MM.plot(plot_book=True, nb = 1000, nt=800, wait_time=0.5)
     else:  # do training
         print(f"Training {config.name}")
-        MM.train(plot_after=100)
+        MM.train(plot_after=args.plot_after)
         print(f"Training done! Saved to {config.name}")

@@ -10,6 +10,10 @@ except ModuleNotFoundError:
 class Market(BaseMarket):
     def __init__(self, inventory: int, wealth: float, config: Config):
         super().__init__(inventory, wealth, config)
+        max_dW = self.book.midprice * 3000  # max dW?
+        self.a = 1/max_dW  # how much we weigh dW
+        self.b = 10/self.max_t   # time-weighted inventory change
+        self.c = 1/self.max_t    # how much we negatively weigh time
 
     def reward(self, r_state):
         """ 

@@ -224,9 +224,9 @@ class UniformMarketMaker():
     def plot(self, nb=0, nt=0, plot_book=False, wait_time=1):
         """ plot final scores and final sample path """
         nb = nb if nb else self.config.nb
-        nb = nt if nt else self.config.nt
+        nt = nt if nt else self.config.nt
         export_plot(np.array(self.final_returns),"Final Returns",self.config.name,self.config.scores_plot)
-        export_plot(np.array(self.values),"Final Values",self.config.name,self.config.values_plot)
+        export_plot(np.array(self.final_values),"Final Values",self.config.name,self.config.values_plot)
         with tqdm(total=nb) as pbar:
             pbar.set_description("Plotting Final Paths...")
             paths = self.get_paths(pbar, nt=nt, nb=nb, track_all=True)
@@ -272,7 +272,7 @@ class MasketMarketMaker(UniformMarketMaker):
         if track_all:  # track all for later plotting?
             wealth = np.ma.empty((nbatch, nt))
             inventory = np.ma.empty((nbatch, nt),dtype=int)
-            midprices = np.ma.empty((nbatch, nt))
+            states = np.ma.empty((nbatch, nt, 3))
         for b in range(nbatch):
             self.market.reset()
             W = self.market.W; I = self.market.I
@@ -295,7 +295,7 @@ class MasketMarketMaker(UniformMarketMaker):
                     W += dW; I += dI
                     wealth[b, t] = W
                     inventory[b, t] = I
-                    midprices[b, t] = midprice
+                    states[b, t] = (midprice, midprice-self.market.book.delta_b, midprice+self.market.book.delta_a)
             rewards[b, t] += self.market.final_reward(W, I, self.market.book.midprice)
             if pbar:
                 pbar.update(1)
@@ -306,7 +306,7 @@ class MasketMarketMaker(UniformMarketMaker):
         if track_all:
             paths["wea"] = wealth
             paths["inv"] = inventory
-            paths["book"] = midprices
+            paths["book"] = states
         return paths
 
     def masked_train(self, plot_after=False):
@@ -390,7 +390,7 @@ class MarketMaker(UniformMarketMaker):
             if track_all:
                 wealth = []
                 inventory = []
-                midprices = []
+                states = []
             # timestep
             terminated = False
             for t in range(nt):
@@ -425,7 +425,7 @@ class MarketMaker(UniformMarketMaker):
                 if track_all:
                     wealth.append(W)
                     inventory.append(I)
-                    midprices.append((midprice, midprice-self.market.book.delta_b, midprice+self.market.book.delta_a))
+                    states.append((midprice, midprice-self.market.book.delta_b, midprice+self.market.book.delta_a))
             if not terminated or self.config.always_final:
                 if len(rewards):
                     rewards[-1] += self.market.final_reward(W, I, self.market.book.midprice)
@@ -438,7 +438,7 @@ class MarketMaker(UniformMarketMaker):
             if track_all:
                 path["wea"] = wealth
                 path["inv"] = inventory
-                path["book"] = midprices
+                path["book"] = states
             paths.append(path)
             avg_timestep += t+1
         avg_timestep /= nbatch

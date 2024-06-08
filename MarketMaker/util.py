@@ -113,12 +113,14 @@ def plot_WIM(paths, dt: float, title='', savename=''):
     else:   # when using book_quit with variable-length trajectories, convert to masked array for plotting
         wealth    = arrs_to_masked([p['wea'] for p in paths])
         inventory = arrs_to_masked([p['inv'] for p in paths])
-        mids      = arrs_to_masked([p['book'][:,0] for p in paths])
-        high_bids = arrs_to_masked([p['book'][:,1] for p in paths])
-        low_asks  = arrs_to_masked([p['book'][:,2] for p in paths])
+        states    = [p['book'] for p in paths]  # lists of (length x 3)
+        mids      = arrs_to_masked([[i[0] for i in traj] for traj in states])
+        high_bids = arrs_to_masked([[i[1] for i in traj] for traj in states])
+        low_asks  = arrs_to_masked([[i[2] for i in traj] for traj in states])
+        print(mids.shape, high_bids.shape, low_asks.shape)
     # states is nbatch x nt x (midprice, highest_bid, lowest_ask)
     times = np.arange(0, wealth.shape[-1]*dt, dt)
-    fig, axs = plt.subplots(1,3, figsize=(12,10), sharex=True)
+    fig, axs = plt.subplots(3,1, figsize=(12,10), sharex=True)
     c = 0
     # plot states
     ax = axs[0]
@@ -128,10 +130,12 @@ def plot_WIM(paths, dt: float, title='', savename=''):
     plot_trajectory(times, low_asks, ax, 'C1')
     # plot wealth and inventory on same x axis
     ax = axs[1]
-    ax.set(ylabel='Wealth', color='C5')
+    ax.set_ylabel('Wealth')
+    ax.tick_params(axis='y',labelcolor='C5')
     plot_trajectory(times, wealth, ax, 'C5')
     inv_ax = ax.twinx()
-    inv_ax.set(ylabel='Inventory', color='C2')
+    inv_ax.set_ylabel('Inventory')
+    inv_ax.tick_params(axis='y',labelcolor='C2')
     plot_trajectory(times, inventory, inv_ax, 'C2')
     # plot total value
     ax = axs[2]
@@ -139,6 +143,7 @@ def plot_WIM(paths, dt: float, title='', savename=''):
     value = wealth + inventory*mids
     plot_trajectory(times, value, ax, 'C6')
     if title: fig.suptitle(title)
+    fig.tight_layout()
     if savename: 
         fig.savefig(savename)
     else: 
@@ -155,6 +160,7 @@ def export_plot(y, ylabel, title, filename):
     ax.plot(times, ys)
     ax.set(xlabel='Training Episode',ylabel=ylabel)
     ax.set_title(title)
+    fig.tight_layout()
     plt.savefig(filename)
     plt.close()
 

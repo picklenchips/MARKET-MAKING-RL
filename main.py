@@ -1,8 +1,8 @@
 from MarketMaker.marketmaker import MarketMaker
-from MarketMaker.config import get_config
-from MarketMaker.util import np, torch
+from MarketMaker.config import get_config, search_for_config
+from MarketMaker.util import np, torch, glob
 
-import argparse
+import argparse, os
 
 parser = argparse.ArgumentParser()
 parser.add_argument("-l", "--load",   help='load a model from a results/name directory')
@@ -32,6 +32,7 @@ parser.add_argument("--plot-after", "-pa", help='plot the market after this many
 parser.add_argument("--seed", default=0, type=int)
 # TD LAMBDA STUFF?
 parser.add_argument("--td", "--TD", "-td", action='store_true')
+parser.add_argument("--good-results", help='update plots for all good results', action='store_true')
 
 if __name__ == "__main__":
     """
@@ -51,8 +52,22 @@ if __name__ == "__main__":
         - get_config(args) returns a Config object that correctly matches args.
             - will automatically resume an unfinished training session if args matches a config 
                 in results/
-            - args.load"""
+            - args.load
+    """
+    if args.good_results:   # update the plots for an entire results directory
+        results_dir = os.getcwd()+"/good-results"
+        for result in glob(results_dir+'/*'):
+            print(f"Updating {'/'.join(result.split('/')[-2:])}")
+            config, pkl = search_for_config(result)
+            config.set_name(config.starting_epoch, save_dir=results_dir)
+            MM = MarketMaker(config)
+            MM.load()
+            MM.plot(nb=1000)
+            
     config = get_config(args)
+    if not config:
+        print("ERROR: No config found... exiting")
+        exit()
     print(config)
 
     """ Initialize an instance of a MarketMaker as MM

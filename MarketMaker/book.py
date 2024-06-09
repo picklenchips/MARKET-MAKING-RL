@@ -19,7 +19,7 @@ class OrderBook():
       - lowest ask tracked as (self.low_ask, self.nlow_ask)
     also stores an evolving self.midprice self.midprice, self.spread, self.delta_b, self.delta_a
     """
-    def __init__(self, baseline=100, n_to_add=100) -> None:
+    def __init__(self, baseline=533, n_to_add=100) -> None:
         # keep track of limit orders
         self.bids = []
         self.asks = []
@@ -32,31 +32,24 @@ class OrderBook():
         self.delta_a  = 0
 
         # BROWNIAN MIDPRICE
-        self.drift = 0 #3.59e-6
+        self.drift = 3.59e-6
         self.scale = 2.4e-3
         self.max_t = 1
         self.baseline = baseline
         self.midprice = self.baseline
         self.model = BrownianMotion(drift=self.drift, scale=self.scale, t=self.max_t)
-
-        # ensure there are ALWAYS enough stocks to buy/sell stuff
-        self.worst_bid = 0.01
-        self.worst_ask = 100*baseline
         self.n_to_add = n_to_add
-
+        
     def __str__(self) -> str:
         """ Print the current state """
-        return f"{self.nhigh_bid} x ${uFormat(self.delta_b,0,3)} | {uFormat(self.midprice,0,4)} | {self.nlow_ask} x ${uFormat(self.low_ask,0,3)}"
+        return f"{self.nhigh_bid}, -${uFormat(self.delta_b,0,3)} | {uFormat(self.midprice,0,4)} | {self.nlow_ask}, +${uFormat(self.delta_a,0,3)}"
     
     def copy(self) -> 'OrderBook':
         """ Create a copy of the order book """
-        new_book = OrderBook(self.baseline, self.n_to_add)
+        new_book = OrderBook(self.midprice)
         new_book.bids = self.bids.copy()
         new_book.asks = self.asks.copy()
-        new_book.midprice = self.midprice
-        new_book.spread = self.spread
-        new_book.delta_b = self.delta_b
-        new_book.delta_a = self.delta_a
+        new_book.recalculate()
         return new_book
     
     def is_empty(self):

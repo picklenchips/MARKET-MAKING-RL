@@ -1,10 +1,10 @@
 try:  # run from outside of the folder
-    from MarketMaker.util import np, torch, plot_WIM, export_plot, np2torch, arrs_to_masked
+    from MarketMaker.util import np, torch, plot_WIM, export_plot, np2torch, arrs_to_masked, uFormat
     from MarketMaker.config import Config
     from MarketMaker.rewards import Market
     from MarketMaker.policy import Policy
 except ModuleNotFoundError:   # run from within the folder
-    from util import np, torch, plot_WIM, export_plot, np2torch, arrs_to_masked
+    from util import np, torch, plot_WIM, export_plot, np2torch, arrs_to_masked, uFormat
     from config import Config
     from rewards import Market
     from policy import Policy
@@ -66,14 +66,30 @@ class UniformMarketMaker():
         """ Return a trained market maker model from same config """
         name = self.config.out
         if not os.path.exists(name+"_pol.pth"):
-            raise FileNotFoundError(f"Model {name} not found")
+            name = self.config.old_out
+            if not os.path.exists(name+"_pol.pth"):
+                raise FileNotFoundError(f"Model {name} not found")
+        print('loaded model from', name)
         if self.config.use_baseline:
             self.P.baseline.network.load_state_dict(torch.load(name+"_val.pth"))
             self.logger.info(f"Loaded baseline network from {name}_val.pth")
         self.P.policy.load_state_dict(torch.load(name+"_pol.pth"))
         self.logger.info(f"Loaded policy network from {name}_pol.pth")
-        self.final_returns = [list(final) for final in np.load(self.config.scores_out)]
-        self.final_values = [list(value) for value in np.load(self.config.values_out)]
+        try:  # works with variable length final stuff
+            self.final_returns = [list(final) for final in np.load(self.config.scores_out)['data']]
+            self.final_values = [list(value) for value in np.load(self.config.values_out)['data']]
+        except FileNotFoundError:
+            try:
+                self.final_returns = np.load(name + "_scores.npy")
+                self.final_values = np.load(name + "_scores.npy")
+                print(self.final_returns.shape, self.final_values.shape)
+                self.final_returns = list(self.final_returns)
+                self.final_values = list(self.final_values)
+            except FileNotFoundError:
+                print(f'could not load from {self.config.scores_out}')
+                self.logger.info(f"Could not load final resturns,values from {self.config.out}")
+                self.final_returns = []
+                self.final_values = []
         self.logger.info(f"Loaded scores from {self.config.scores_out}")
     
     def get_paths(self, pbar, nt=None, nb=None, track_all=False):
@@ -269,14 +285,18 @@ class MasketMarketMaker(UniformMarketMaker):
         rewards = np.ma.empty((nbatch, nt))
         rewards.mask = True
         if self.do_ppo:
-            logprobs = np.empty((nbatch, nt))
+            logprobs = np.ma.empty((nbatch, nt))
+            logprobs.mask = True
         if track_all:  # track all for later plotting?
             wealth = np.ma.empty((nbatch, nt))
+            wealth.mask = True
             inventory = np.ma.empty((nbatch, nt),dtype=int)
+            inventory.mask = True
             states = np.ma.empty((nbatch, nt, 3))
+            states.mask = True
         for b in range(nbatch):
             self.market.reset()
-            W = self.market.W; I = self.market.I
+            W = self.market.W; I = self.market.I  # starting wealth, inventory
             # timestep
             for t in range(nt):
                 time_left = (T - t*dt,)
@@ -397,19 +417,21 @@ class MarketMaker(UniformMarketMaker):
             for t in range(nt):
                 time_left = (T - t*dt,)
                 state = self.market.state() + time_left
+                past_book = str(self.market.book)
                 if self.do_ppo:  # need to get log probability directly
                     action, logprob = self.P.policy.act(state, return_log_prob=True)
                     self.market.submit(*action)
                 else:
                     action = self.market.act(state, self.P.policy.act)
                 if self.book_quit and self.market.is_empty():
-                    #self.logger.info(f'Batch {b} step {t}: Book is empty, quitting trajectory')
+                    self.logger.info(f'Action {tuple(map(lambda x: uFormat(x), action))} on book {past_book} emptied book!')
                     terminated = True
                     break   # quit if either bids or asks are empty
+                past_book = str(self.market.book)
                 dW, dI, midprice = self.market.step()
                 if dW is ValueError:
                     lambda_sell = dI; lambda_buy = midprice
-                    print(f"Batch {b} step {t} INVALID lambdas, ({lambda_sell}, {lambda_buy}), on book {self.market.book}")
+                    print(f"Batch {b} step {t} INVALID lambdas, ({lambda_sell}, {lambda_buy}), on book {past_book}")
                     self.market.reset(plot=True, make_bell=True)
                     break
                 if self.book_quit and self.market.is_empty():

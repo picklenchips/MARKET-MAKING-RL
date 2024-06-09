@@ -136,7 +136,8 @@ def plot_WIM(paths, dt: float, title='', savename=''):
         high_bids = arrs_to_masked([[i[1] for i in traj] for traj in states])
         low_asks  = arrs_to_masked([[i[2] for i in traj] for traj in states])
     # states is nbatch x nt x (midprice, highest_bid, lowest_ask)
-    times = np.arange(0, wealth.shape[-1]*dt, dt)
+    times = np.arange(0, (wealth.shape[-1]+1)*dt, dt)
+    times = times[:wealth.shape[-1]]
     fig, axs = plt.subplots(3,1, figsize=(12,10), sharex=True)
     c = 0
     # plot states
@@ -168,14 +169,14 @@ def plot_WIM(paths, dt: float, title='', savename=''):
     plt.close()
 
 def export_plot(y, ylabel, title, filename):
-    """ plot epochs. """
+    """ plot values / final returns """
     fig, ax = plt.subplots(figsize=(10,8))
     times = np.arange(0, y.shape[0])
     ys = y.mean(axis = -1)
     yerrs = y.std(axis = -1)/np.sqrt(y.shape[-1])
     ax.fill_between(times, ys - yerrs, ys + yerrs, alpha=0.25)
     ax.plot(times, ys)
-    ax.set(xlabel='Training Episode',ylabel=ylabel)
+    ax.set(xlabel='Training Episode',ylabel=ylabel, yscale='log')
     ax.set_title(title)
     fig.tight_layout()
     plt.savefig(filename)

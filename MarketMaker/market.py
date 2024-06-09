@@ -25,9 +25,12 @@ class BaseMarket():
         self.K_s = 1 
         # NEW
         #            intercept,delta,delta^2,(1+q),(1+q)^2,1+q+delta
-        self.betas = (7.0187, -0.3265, 0.0554, -3.27, 1.16, 0.078)  # ryan's new model
+        self.betas = (7.0187, -0.3265, 0.0554, -3.3, 0.16, 0.078)  # ryan's new model
         # OLD
         self.betas = (7.40417, 0, 0, -3.12017, 0.167814, 0)
+
+        # desmos fit - ben   - change to (1+delta) as well
+        self.betas = (7.2, -2.13, -0.8, -2.3, 0.167, -0.1)
 
         # action stuff
         self.sigma = config.sigma
@@ -39,14 +42,14 @@ class BaseMarket():
         
         self.discount = config.discount
 
-    def reset(self, mid=100, spread=10, nstocks=10000, nsteps=1000, substeps=1, 
+    def reset(self, mid=533, spread=10, nstocks=10000, nsteps=1000, substeps=1, 
               make_bell=True, plot=False, step_through=0):
         """ Randomly initialize order book 
         - nstocks is num stocks on each side """
         if self.book: del(self.book)
         self.book = LOB(mid)
         # start with symmetric spread
-        # JUST DO A BELL CURVE ON EACH SIDE
+        # JUST DO A BELL CURVE ON EACH SIDE to start!
         tot_amount = 0
         if make_bell:
             while tot_amount < nstocks:
@@ -59,7 +62,7 @@ class BaseMarket():
                 tot_amount += nask + nbid
             if plot:
                 self.book.plot(title="pre: "+str(tuple( map(lambda x: round(x,2), self.state()) )),wait_time=0)
-            if not plot:
+            if not plot: 
                 return
         # start with symmetric spread and market-step
         for t in range(nsteps):
@@ -100,7 +103,7 @@ class BaseMarket():
 # --- ENVIRONMENT / DYNAMICS --- #
     def lambda_buy(self, delta, q):
         if not q: return 0
-        lambdaa =  np.exp(self.betas[0]+self.betas[1]*np.log(delta)+self.betas[2]*np.log(delta)**2+self.betas[3]*np.log(1+q)+self.betas[4]*np.log(1+q)**2+self.betas[5]*np.log(delta+1+q))
+        lambdaa = np.exp(self.betas[0]+self.betas[1]*np.log(1+delta)+self.betas[2]*np.log(1+delta)**2+self.betas[3]*np.log(1+q)+self.betas[4]*np.log(1+q)**2+self.betas[5]*np.log(delta+1+q))
         return lambdaa
     
     def lambda_sell(self, delta, q):
@@ -119,6 +122,7 @@ class BaseMarket():
                 nbuy  = np.random.poisson(lambda_buy)
                 nsell = np.random.poisson(lambda_sell)
             except ValueError:
+                # the lambda function has killed itself
                 if plot:
                     return ValueError, lambda_sell, lambda_buy, (nsell, self.book.high_bid, nbuy, self.book.low_ask)
                 return ValueError, lambda_sell, lambda_buy
@@ -196,5 +200,8 @@ if __name__ == "__main__":
     """
     config = Config()
     M = BaseMarket(0, 0, config)
+    # test lambda function
+    print(M.lambda_buy(0,1))
+    print(M.lambda_buy(0.0001,1))
     for i in range(20):
         M.reset(plot=True, make_bell=True, step_through=0.2)

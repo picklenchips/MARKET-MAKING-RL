@@ -45,10 +45,21 @@ class Market(BaseMarket):
         if isinstance(r_state, tuple):
             r_state = np.array(r_state)
         reward = self.a*r_state[...,0]
-        if self.config.add_inventory:
-            reward += np.exp(-self.b*r_state[...,2]) * np.sign(r_state[...,1])
-        if self.config.add_time:
-            reward += self.c*(self.max_t - r_state[...,2])
+        # implemented with backwards compatibility for older configs...
+        try:
+            if self.config.add_inventory:
+                reward += np.exp(-self.b*r_state[...,2]) * np.sign(r_state[...,1])
+        except AttributeError:
+            pass
+        try:
+            if self.config.add_time:
+                reward += self.c*(self.max_t - r_state[...,2])
+        except AttributeError:
+            try:
+                if self.config.subtract_time:
+                    reward += self.c*(self.max_t - r_state[...,2])
+            except AttributeError:
+                pass
         return reward
         
     def final_reward(self, wealth, inventory, midprice):

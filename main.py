@@ -8,6 +8,7 @@ parser = argparse.ArgumentParser()
 parser.add_argument("-l", "--load",   help='load a model from a results/name directory')
 parser.add_argument("-r", "--resume", action='store_true', help='resume training from a model')
 parser.add_argument("-p", "--plot", action='store_true', help='dont train, just plot')
+parser.add_argument("--expand", help='add epochs to existing model', type=int)
 
 parser.add_argument("--policy", help='use noppo to turn ppo off. use discrete for categorical instead of \
                                       gaussian policy', default='ppo')
@@ -20,7 +21,7 @@ parser.add_argument("--noclip", "-nc", help='dont clip the ratio in PPO', action
                     )
 parser.add_argument("--noppo", '-np', help='dont use PPO, just use regular policy grad', action='store_true', 
                     )
-parser.add_argument("--noadv",  help='dont use advantages, just returns', action='store_true', 
+parser.add_argument("--noadv",'-na', help='dont use advantages, just returns', action='store_true', 
                     )
 parser.add_argument('--uniform', '--nobookquit', '-u', help='dont quit early', action='store_true', 
                     )
@@ -33,6 +34,7 @@ parser.add_argument("--seed", default=0, type=int)
 # TD LAMBDA STUFF?
 parser.add_argument("--td", "--TD", "-td", action='store_true')
 parser.add_argument("--good-results", help='update plots for all good results', action='store_true')
+
 
 if __name__ == "__main__":
     """
@@ -68,7 +70,7 @@ if __name__ == "__main__":
     if not config:
         print("ERROR: No config found... exiting")
         exit()
-    print(config)
+    #print(config)
 
     """ Initialize an instance of a MarketMaker as MM
     Functions:

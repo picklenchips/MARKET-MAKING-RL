@@ -196,22 +196,21 @@ class Exponential(torch.nn.Module):
         return f'y = -{abs(self.a.item())} * exp(-{abs(self.b.item())} x)'
 
 
-def uFormat(number, uncertainty, figs = 4, shift = 0, shorten = True):
+def uFormat(number, uncertainty=0, figs = 4, shift = 0, FormatDecimals = False):
     """
-    V 3.0
-    Returns "num_rounded(with_sgnfcnt_dgts_ofuncrtnty)", formatted to 10^round
+    Returns "num_rounded(with_sgnfcnt_dgts_ofuncrtnty)", formatted to 10^shift
     According to section 5.3 of "https://pdg.lbl.gov/2011/reviews/rpp2011-rev-rpp-intro.pdf"
 
     Arguments:
     - float number:      the value
     - float uncertainty: the absolute uncertainty (stddev) in the value
-       - if zero, will just format number to (figs) sig_figs
+       - if zero, will format number to optional number of sig_figs (see figs)
     - int shift:  optionally, shift the resultant number to a higher/lower digit expression
        - i.e. if number is in Hz and you want a string in GHz, specify shift = 9
                likewise for going from MHz to Hz, specify shift = -6
     - int figs: when uncertainty = 0, format number to degree of sig figs instead
        - if zero, will simply return number as string
-    - bool shorten:  for a number 0.00X < 1e-2, option to express in "X.XXe-D" format
+    - bool FormatDecimals:  for a number 0.00X < 1e-2, option to express in "X.XXe-D" format
              for conciseness. doesnt work in math mode because '-' is taken as minus sign
     """
     num = str(number); err = str(uncertainty)
@@ -272,12 +271,14 @@ def uFormat(number, uncertainty, figs = 4, shift = 0, shorten = True):
         if decimal:
             ni += 1
         if not foundSig and ch == '0': # dont care ab leading zeroes
-            continue  
+            continue
         if ch == '.':
             decimal = True
             continue
         jNum += ch
         foundSig = True
+    if len(jNum) == 0:  # our number is literally zero!
+        return '0'
     
     # round error correctly according to PDG
     if len(topThree) == 3:
@@ -328,15 +329,24 @@ def uFormat(number, uncertainty, figs = 4, shift = 0, shorten = True):
     
     n = len(Num)
     # if were at <= e-3 == 0.009, save formatting space by removing decimal zeroes
-    # so 0.0099 -> 9.9e-3
     extraDigs = 0
-    if not shift and shorten and (ni-n) >= 2:
+    if not shift and FormatDecimals and (ni-n) >= 2:
         shift -= ni - n + 1
         extraDigs = ni - n + 1
     
     # shift digits up/down by round argument
     ni += shift
     end = ''
+
+    # there are digits to the right of decimal and we dont 
+    # care about exact sig figs (to not format floats to 0.02000)
+    if ni > 0 and sigFigsMode:
+        while Num[-1] == '0':
+            if len(Num) == 1: break
+            Num = Num[:-1]
+            ni -= 1
+            n -= 1
+    
     if ni >= n:   # place decimal before any digits
         Num = '0.' + "0"*(ni-n) + Num
     elif ni > 0:  # place decimal in-between digits

@@ -76,8 +76,8 @@ class UniformMarketMaker():
         self.P.policy.load_state_dict(torch.load(name+"_pol.pth"))
         self.logger.info(f"Loaded policy network from {name}_pol.pth")
         try:  # works with variable length final stuff
-            self.final_returns = [list(final) for final in np.load(self.config.scores_out)['data']]
-            self.final_values = [list(value) for value in np.load(self.config.values_out)['data']]
+            self.final_returns = [list(final) for final in np.load(name+"_scores.npz")['data']]
+            self.final_values = [list(value) for value in np.load(name+"_scores.npz")['data']]
         except FileNotFoundError:
             try:
                 self.final_returns = np.load(name + "_scores.npy")

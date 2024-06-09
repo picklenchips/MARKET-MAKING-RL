@@ -1,3 +1,3 @@
-cd good-results/
+cd results/
 zip -r ../results.zip . -i */*.png
 cd ../

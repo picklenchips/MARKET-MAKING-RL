@@ -2,7 +2,7 @@
 import os, math, pickle
 from collections import defaultdict
 from glob import glob
-import argparse
+import argparse, re
 try:
     from MarketMaker.util import get_logger
 except ModuleNotFoundError:
@@ -251,8 +251,8 @@ def config_from_name(pathname: str) -> Config | FileNotFoundError:
 def search_for_config(filepath: str) -> Config | bool:
     """ Load a configuration from a filename
     finds pickle files, and then sets config from directory name """
-    #if not filepath.startswith(SAVEDIR):
-    #    filepath = SAVEDIR + "/" + filepath
+    if len(glob(filepath)) == 0:
+        filepath = SAVEDIR + "/" + filepath
     for f in glob(filepath):
         # first, look for pickle files
         if f[-4] == ".pkl":
@@ -274,6 +274,27 @@ def search_for_config(filepath: str) -> Config | bool:
                 pass
     return False, False
 
+def update_epoch(save_dir: str, epoch: int) -> str:
+    """ rename directory + all of its (non .png) files 
+    to reflect a new epoch
+    Returns the new directory name """
+    if save_dir[-1] == '/':
+        save_dir = save_dir[:-1]
+    prevdir = '/'.join(save_dir.split("/")[:-1])
+    old_base = save_dir.split("/")[-1]
+    new_base = re.sub(r"_(\d+)-", f"_{epoch}-", old_base)
+    for f in glob(save_dir+"/*"):
+        name = f.split("/")[-1]
+        if f[-3:] == 'png': 
+            continue
+        if old_base not in f:
+            continue
+        newname = re.sub(r"_(\d+)-", f"_{epoch}-", name)
+        os.rename(f, save_dir+"/"+newname)
+    print(save_dir, prevdir+"/"+new_base)
+    os.rename(save_dir, prevdir+"/"+new_base)
+    return prevdir+"/"+new_base
+
 def get_config(args: argparse.ArgumentParser) -> Config:
     """ Load a configuration from a filename """
     config = False
@@ -283,7 +304,11 @@ def get_config(args: argparse.ArgumentParser) -> Config:
         config, found_pkl = search_for_config(args.load)
         if not config:
             raise FileNotFoundError(f"Could not find config file from {args.load}")
-        if not found_pkl:
+        if not found_pkl: config.save()
+        if args.expand:
+            config.ne += args.expand
+            update_epoch(config.save_dir, config.ne)
+            config.set_name(epoch=config.starting_epoch)
             config.save()
         return config
     # SET DEFAULT CONFIG
@@ -299,7 +324,7 @@ def get_config(args: argparse.ArgumentParser) -> Config:
     # see if there is an existing plot w the same thing
     # make_new = make new directory if directory exists
     oldconfig, found_pkl = search_for_config(config.save_dir)
-    make_new = not (args.resume or args.plot)
+    make_new = not (args.resume or args.plot or args.expand)
     print(oldconfig.name)
     if oldconfig:
         config = oldconfig
@@ -310,7 +335,12 @@ def get_config(args: argparse.ArgumentParser) -> Config:
         policypath = policypath[0]
         config.starting_epoch = int(policypath.split("/")[-1].split("_")[0])
     if config.starting_epoch == config.ne:
-        config.set_name(0,make_new=make_new)
+        if args.expand:
+            config.ne += args.expand
+            update_epoch(config.save_dir, config.ne)
+            config.set_name(epoch=config.starting_epoch, make_new=make_new)
+        else:
+            config.set_name(0,make_new=make_new)
         config.save()
     else:
         config.set_name(config.starting_epoch)

@@ -114,21 +114,22 @@ class UniformMarketMaker():
         obs_dim = self.config.obs_dim
         act_dim = self.config.act_dim
         
-        trajectories = np.empty((nbatch, nt, val_dim))
-        actions = np.empty((nbatch, nt, act_dim))
-        rewards = np.empty((nbatch, nt))
-        values  = np.empty((nbatch,))
+        trajectories = np.zeros((nbatch, nt, val_dim))
+        actions = np.zeros((nbatch, nt, act_dim))
+        rewards = np.zeros((nbatch, nt))
+        values  = np.zeros((nbatch,))
         if self.do_ppo:
-            logprobs = np.empty((nbatch, nt))
+            logprobs = np.zeros((nbatch, nt))
         if track_all:  # track all for later plotting?
-            wealth = np.empty((nbatch, nt))
-            inventory = np.empty((nbatch, nt),dtype=int)
+            wealth = np.zeros((nbatch, nt))
+            inventory = np.zeros((nbatch, nt),dtype=int)
             # track book state  (midprice, delta_b, delta_a)
-            states = np.empty((nbatch, nt, 3))
+            states = np.zeros((nbatch, nt, 3))
         for b in range(nbatch):
             self.market.reset()
-            W = self.market.W; I = self.market.I
+            W = self.market.W; I = self.market.I; midprice = self.market.midprice
             # timestep
+            terminated = False
             for t in range(nt):
                 time_left = (T - t*dt,)
                 state = self.market.state() + time_left
@@ -138,12 +139,19 @@ class UniformMarketMaker():
                     self.market.submit(*action)
                 else:
                     action = self.market.act(state, self.P.policy.act)
+                if self.market.is_empty():
+                    self.logger.info(f'Action {tuple(map(lambda x: uFormat(x), action))} emptied book!')
+                    break
                 actions[b, t] = action
                 dW, dI, midprice = self.market.step()   # (dW, dI, midprice)
                 if dW is ValueError:
                     lambda_sell = dI; lambda_buy = midprice
                     print(f"Batch {b} step {t} INVALID lambdas, ({lambda_sell}, {lambda_buy}), on book {self.book}")
                     self.market.reset(plot=True, make_bell=True)
+                    terminated = True
+                    break
+                if self.market.is_empty(): 
+                    terminated = True
                     break
                 reward_state = (dW, dI) + time_left
                 rewards[b, t] = self.market.reward(reward_state)
@@ -153,7 +161,8 @@ class UniformMarketMaker():
                     wealth[b, t] = W
                     inventory[b, t] = I
                     states[b, t] = (midprice, midprice-self.book.delta_b, midprice+self.book.delta_a)
-            rewards[b, t] += self.market.final_reward(W, I, midprice)
+            if not terminated or self.config.always_final:
+                rewards[b, t] += self.market.final_reward(W, I, midprice)
             values[b] = W + I*midprice
             if pbar: pbar.update(1)
         observations = trajectories[...,:obs_dim]

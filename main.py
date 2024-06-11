@@ -33,6 +33,7 @@ parser.add_argument("--seed", default=-1, type=int)
 # TD LAMBDA STUFF?
 parser.add_argument("--td", "--TD", "-td", action='store_true')
 parser.add_argument("--good-results", help='update plots for all good results', action='store_true')
+parser.add_argument('--book-size', '-bs', help='size of the initial book', type=int)
 
 
 if __name__ == "__main__":
@@ -62,13 +63,13 @@ if __name__ == "__main__":
             config.set_name(config.starting_epoch, save_dir=results_dir)
             MM = MarketMaker(config)
             MM.load()
-            MM.plot(nb=1000)
-            
+            MM.plot(nb=args.nb if args.nb else 1000)
+        exit()
     config = get_config(args)
     if not config:
         print("ERROR: No config found... exiting")
         exit()
-    #print(config)
+    print(config)
 
     """ Initialize an instance of a MarketMaker as MM
     Functions:

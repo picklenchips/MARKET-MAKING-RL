@@ -29,12 +29,12 @@ class BasePolicy:
     def log_probs(self, distribution: ptd.Distribution, actions: torch.Tensor | masked.MaskedTensor):
         """ Return log probs of actions """
         if isinstance(actions, masked.MaskedTensor):
-            data = torch.nan_to_num(actions._masked_data, 1)
+            data = torch.nan_to_num(actions._masked_data, 1).to(device)
             mask = actions._masked_mask[...,0].detach()  # bc probs are 1D
             req_grad = actions.requires_grad
             probs = distribution.log_prob(data).detach()
-            return masked.masked_tensor(probs, mask, requires_grad=req_grad)
-        return distribution.log_prob(actions)
+            return masked.masked_tensor(probs, mask, requires_grad=req_grad).to(device)
+        return distribution.log_prob(actions).to(device)
     
     def entropy(self, distribution: ptd.Distribution, observations: torch.Tensor | masked.MaskedTensor):
         """ Return entropy of the distribution """
@@ -43,7 +43,7 @@ class BasePolicy:
             return entropy     # bc entropy is 1D
         mask = observations._masked_mask[...,0].detach()
         req_grad = observations.requires_grad
-        return masked.masked_tensor(entropy.detach(), mask, requires_grad=req_grad)
+        return masked.masked_tensor(entropy.detach(), mask, requires_grad=req_grad).to(device)
 
     def act(self, observations: np.ndarray, return_log_prob = False):
         """ Return np.ndarray actions (and log probs)? from action distribution """
@@ -75,7 +75,7 @@ class GaussianPolicy(BasePolicy, nn.Module):
     def __init__(self, network, action_dim):
         nn.Module.__init__(self)
         self.network = network
-        self.log_std = nn.Parameter(torch.zeros(action_dim), requires_grad=False)
+        self.log_std = nn.Parameter(np2torch(np.zeros(action_dim)), requires_grad=False)
 
     def std(self):
         """ Returns: torch.Tensor of shape [dim(action space)] """
@@ -86,7 +86,7 @@ class GaussianPolicy(BasePolicy, nn.Module):
         means = self.network(observations)
         if isinstance(means, masked.MaskedTensor):
             means = means._masked_data.nan_to_num(0)
-        return ptd.MultivariateNormal(means, scale_tril=torch.diag(self.std()))
+        return ptd.MultivariateNormal(means, scale_tril=torch.diag(torch.exp(self.log_std)))
 
 
 ##########################################

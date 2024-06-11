@@ -248,7 +248,7 @@ class UniformMarketMaker():
         with tqdm(total=nb) as pbar:
             pbar.set_description("Plotting Final Paths...")
             paths = self.get_paths(pbar, nt=nt, nb=nb, track_all=True)
-            plot_WIM(paths, self.dt, title=self.config.name, savename=self.config.wim_plot)
+            plot_WIM(paths, self.dt, title=self.config.name, savename=self.config.wim_plot, isfinal=True)
         # plot a single trajectory...
         if plot_book:
             self.plot_book_path(nt=nt, wait_time=wait_time)      
@@ -528,7 +528,7 @@ class MarketMaker(UniformMarketMaker):
                 self.save(epoch+1, do_plot)   # intermediately save the market maker for later loading
 
                 if do_plot:
-                    plot_WIM(paths, self.dt, title=f'epoch {epoch}', savename=self.config.out+'.png')
+                    plot_WIM(paths, self.dt, title=f'epoch {epoch}', savename=self.config.out+'.png', isfinal=False)
         self.logger.info("DONZO BONZO!")
         self.save(epoch+1, True)
         self.plot()

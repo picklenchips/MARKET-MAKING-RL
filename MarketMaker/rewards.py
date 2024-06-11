@@ -10,7 +10,10 @@ except ModuleNotFoundError:
 class Market(BaseMarket):
     def __init__(self, inventory: int, wealth: float, config: Config):
         super().__init__(inventory, wealth, config)
-        max_dW = self.midprice * config.max_dW  # max dW?
+        try:
+            max_dW = self.midprice * config.max_dW  # max dW?
+        except AttributeError:
+            max_dW = self.midprice * 3000
         self.a = 1/max_dW  # how much we weigh dW
         self.b = 10/self.max_t   # time-weighted inventory change
         self.c = 1/self.max_t    # how much we negatively weigh time
@@ -46,7 +49,6 @@ class Market(BaseMarket):
             r_state = np.array(r_state)
         reward = self.a*r_state[...,0]
         # implemented with backwards compatibility for older configs...
-        '''
         try:
             if self.config.add_inventory:
                 reward += np.exp(-self.b*r_state[...,2]) * np.sign(r_state[...,1])
@@ -66,6 +68,7 @@ class Market(BaseMarket):
             reward += np.exp(-self.b*r_state[...,2]) * np.sign(r_state[...,1])
         if self.config.add_time:
             reward += self.c*(self.max_t - r_state[...,2])
+        '''
         return reward
         
     def final_reward(self, wealth, inventory, midprice):

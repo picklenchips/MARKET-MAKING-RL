@@ -21,17 +21,33 @@ import torch.masked as masked
 # CONFIGURE MODULES
 # blue = bids, red = asks
 #           |   Blue  |   Red  |  Orange |  Purple | Yellow  |   Green |   Teal  | Grey
-hexcolors = ['648FFF', 'DC267F', 'FE6100', '785EF0', 'FFB000', '009E73', '3DDBD9', '808080']
-mpl.rcParams['axes.prop_cycle'] = cycler('color', [mpl.colors.to_rgba('#' + c) for c in hexcolors])
+FIGSIZE = (10,9)
+textsize = 20  # size of text for overleaf formatting
 
-FIGSIZE = (10,6)
+def reset_matplotlib():
+    hexcolors = ['648FFF', 'DC267F', 'FE6100', '785EF0', 'FFB000', '009E73', '3DDBD9', '808080']
+    mpl.rcParams['axes.prop_cycle'] = cycler('color', [mpl.colors.to_rgba('#' + c) for c in hexcolors])
+    mpl.rcParams.update(mpl.rcParamsDefault)
+    #mpl.rcParams['figure.figsize'] = FIGSIZE
+
 SAVEDIR = os.path.join(os.getcwd(), "plots")
 os.makedirs(SAVEDIR, exist_ok=True)
 SAVEEXT = ".png"
 np.set_printoptions(precision=4)
 
 
-device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+device = "cpu"
+if torch.cuda.is_available():
+    device = "cuda"
+    torch.set_default_tensor_type('torch.cuda.FloatTensor')
+    torch.set_default_dtype(torch.float32)
+    torch.set_default_tensor_type('torch.cuda.FloatTensor')
+    torch.set_default_dtype(torch.float32)
+    torch.set_default_tensor_type('torch.cuda.FloatTensor')
+    torch.set_default_dtype(torch.float32)
+elif torch.backends.mps.is_available():
+    #device = "mps"
+
 def np2torch(x, requires_grad=False, cast_double_to_float=True):
     ''' for some reason, numpy convention is to have mask=True 
     when the mask is on, while torch has mask=False when the mask 
@@ -39,17 +55,17 @@ def np2torch(x, requires_grad=False, cast_double_to_float=True):
     if isinstance(x, np.ma.MaskedArray):
         mask = torch.from_numpy(~x.mask)
         x = torch.from_numpy(x.data)
-        x = torch.masked.as_masked_tensor(x, mask).to(device)
+        x = torch.masked.as_masked_tensor(x, mask)
     elif isinstance(x, np.ndarray):
-        x = torch.from_numpy(x).to(device)
+        x = torch.from_numpy(x)
     else:
-        x = torch.Tensor(x).to(device)
+        x = torch.Tensor(x)
     if requires_grad:
         x = x.float()
         x.requires_grad = True
     elif cast_double_to_float and x.dtype == torch.float64:
         x = x.float()
-    return x
+    return x.to(device)
 
 def torch2np(x: torch.Tensor | torch.masked.MaskedTensor):
     if isinstance(x, torch.masked.MaskedTensor):
@@ -78,7 +94,7 @@ class MaskedSequential(nn.Sequential):
             newshape = (1,)*(len(x.shape)-1)+(x.shape[-1],)
             mask = mask.repeat(*newshape)
             return masked.masked_tensor(x, mask, requires_grad=req_grad).to(device)
-        return x.to(device)
+        return x
 
 def build_mlp(input_size, output_size, n_layers, hidden_size, activation=nn.ReLU()):
     """ Build multi-layer perception with n_layers hidden layers of size hidden_size. 
@@ -88,7 +104,7 @@ def build_mlp(input_size, output_size, n_layers, hidden_size, activation=nn.ReLU
         layers.append(nn.Linear(hidden_size,hidden_size))
         layers.append(activation)
     layers.append(nn.Linear(hidden_size, output_size))
-    return MaskedSequential(*layers)
+    return MaskedSequential(*layers).to(device)
 
 def get_logger(filename):
     """ Return a logger instance to a file """
@@ -167,9 +183,15 @@ def plot_trajectory(x, y, ax, color):
     ax.fill_between(x, ys - yerrs, ys + yerrs, alpha=0.25, color=color)
     ax.plot(x, ys, color=color)
 
-def plot_WIM(paths, dt: float, title='', savename=''):
+def plot_WIM(paths, dt: float, title='', savename='', isfinal=False):
     """ plot data from a batch of trajectories
     Inputs: (nbatch x nt) np.ndarrays """
+    if isfinal:
+        FIGSIZE = (10,9)
+        mpl.rcParams['font.size'] = textsize
+    else:
+        FIGSIZE = (12,10/3)
+        reset_matplotlib()
     if isinstance(paths, dict):  # when not using book_quit
         wealth = paths['wea']
         inventory = paths['inv']
@@ -185,11 +207,11 @@ def plot_WIM(paths, dt: float, title='', savename=''):
     # states is nbatch x nt x (midprice, highest_bid, lowest_ask)
     times = np.arange(0, (wealth.shape[-1]+1)*dt, dt)
     times = times[:wealth.shape[-1]]
-    fig, axs = plt.subplots(3,1, figsize=(12,10), sharex=True)
-    c = 0
+    fig, axs = plt.subplots(3,1, figsize=(FIGSIZE[0],3*FIGSIZE[1]), sharex=False)
     # plot states
     ax = axs[0]
-    ax.set(ylabel='Order Book')
+    ax.set_ylabel('Order Book')
+    ax.tick_params(axis='y',labelcolor='C3')
     plot_trajectory(times, mids, ax, 'C3')
     plot_trajectory(times, high_bids, ax, 'C0')
     plot_trajectory(times, low_asks, ax, 'C1')
@@ -204,10 +226,13 @@ def plot_WIM(paths, dt: float, title='', savename=''):
     plot_trajectory(times, inventory, inv_ax, 'C2')
     # plot total value
     ax = axs[2]
-    ax.set(ylabel='Total Value', xlabel='Time (s)')
+    ax.set_ylabel('Total Value')
     value = wealth + inventory*mids
     plot_trajectory(times, value, ax, 'C6')
-    if title: fig.suptitle(title)
+    for ax in axs:
+        ax.set_xlabel('Time (s)')
+        ax.grid(which='both', axis='both')
+    if title: fig.suptitle(title, fontsize=0.8*textsize)
     fig.tight_layout()
     if savename: 
         fig.savefig(savename)
@@ -217,14 +242,16 @@ def plot_WIM(paths, dt: float, title='', savename=''):
 
 def export_plot(y, ylabel, title, filename):
     """ plot values / final returns """
-    fig, ax = plt.subplots(figsize=(10,8))
+    mpl.rcParams['font.size'] = textsize
+    fig, ax = plt.subplots(figsize=FIGSIZE)
     times = np.arange(0, y.shape[0])
     ys = y.mean(axis = -1)
     yerrs = y.std(axis = -1)/np.sqrt(y.shape[-1])
     ax.fill_between(times, ys - yerrs, ys + yerrs, alpha=0.25)
     ax.plot(times, ys)
     ax.set(xlabel='Training Episode',ylabel=ylabel, yscale='log')
-    ax.set_title(title)
+    ax.set_title(title, fontsize=0.8*textsize)
+    ax.grid(which='both', axis='both')
     fig.tight_layout()
     plt.savefig(filename)
     plt.close()

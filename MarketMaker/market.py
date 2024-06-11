@@ -15,13 +15,28 @@ class BaseMarket():
         self.W = wealth
         # update book later using self.init_book()
         # initial book parameters:
-        self.midprice = config.midprice
-        self.spread = config.spread
-        self.nstocks = config.nstocks
-        self.make_bell = config.make_bell
-        self.substeps = config.substeps
-        self.nsteps = config.nsteps
-        self.book = LOB()
+        try:
+            self.use_config = True
+            self.midprice = config.midprice
+            self.spread = config.spread
+            self.nstocks = config.nstocks
+            self.make_bell = config.make_bell
+            self.substeps = config.substeps
+            self.nsteps = config.nsteps
+            self.betas = config.betas
+        except AttributeError:
+            self.use_config = False
+            self.midprice = 533
+            self.spread = 10
+            self.nstocks = 10000
+            self.nsteps = 1000
+            self.substeps = 1
+            self.make_bell = True
+            self.betas = (7.2, -2.13, -0.8, -2.3, 0.167, -0.1)
+        self.book = LOB(baseline=self.midprice)
+        self.max_t = config.max_t  # second
+        self.dt    = config.dt   # millisecond
+        self.discount = config.discount
     # --- market order parameters --- #
         # OLD
         # alpha is 1.53 for US stocks and 1.4 for NASDAQ stocks
@@ -32,26 +47,15 @@ class BaseMarket():
         self.K_s = 1 
         # NEW
         #            intercept,delta,delta^2,(1+q),(1+q)^2,1+q+delta
-        self.betas = (7.0187, -0.3265, 0.0554, -3.3, 0.16, 0.078)  # ryan's new model
+        #self.betas = (7.0187, -0.3265, 0.0554, -3.3, 0.16, 0.078)  # ryan's new model
         # OLD
-        self.betas = (7.40417, 0, 0, -3.12017, 0.167814, 0)
-
-        # desmos fit - ben   - change to (1+delta) as well
-        self.betas = (7.2, -2.13, -0.8, -2.3, 0.167, -0.1)
-
-        # action stuff
-        self.max_t = config.max_t  # second
-        self.dt    = config.dt   # millisecond
-        # reward stuff
-        # max possible wealth change from one market step
-        
-        self.discount = config.discount
+        #self.betas = (7.40417, 0, 0, -3.12017, 0.167814, 0)
 
     def reset(self, mid=533, spread=10, nstocks=10000, nsteps=1000, substeps=1, 
-              make_bell=True, plot=False, step_through=0, use_config=True):
+              make_bell=True, plot=False, step_through=0, use_config=False):
         """ Randomly initialize order book 
         - nstocks is num stocks on each side """
-        if use_config:
+        if use_config or self.use_config:
             mid = self.midprice
             spread = self.spread
             nstocks = self.nstocks

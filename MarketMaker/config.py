@@ -101,6 +101,7 @@ class Config:
         self.sigma = sigma  # avellaneda param
         self.gamma = gamma  # avellaneda param
         
+        self.run_no = 0  # used to run repeat stuffs
         if save_config:
             self.set_name(make_new=True)
             self.save()
@@ -156,7 +157,14 @@ class Config:
         policypath = glob(dirabove+"/*_pol.pth")
         if len(policypath):
             policypath = policypath[0]
-            config.starting_epoch = int(policypath.split("/")[-1].split("_")[0])
+            name = policypath.split("/")[-1]
+            epoch = int(name.split("_")[0])
+            config.starting_epoch = epoch
+            run_no = name.split("_")[-2]
+            if run_no.isdigit():
+                config.run_no = int(run_no)
+            else:
+                config.run_no = 0            
         config.set_name(config.starting_epoch)
         return config
     
@@ -182,19 +190,26 @@ class Config:
             except AttributeError:
                 rew_str += "-I-T"
         bool_strs = [pol_str, rew_str]
-        bools = [self.discrete, self.use_baseline, self.normalize_advantages, self.do_clip, self.book_quit, self.add_time, self.immediate_reward]#, self.always_final]
+        bools = [self.discrete, self.use_baseline, self.normalize_advantages, self.do_clip, self.book_quit, self.add_time, self.immediate_reward, self.always_final]
         # OLD NAME
         old_name = '_'.join(['-'.join(strs),'-'.join(map(str, ints)),''.join(map(to_TF, bools))])
         # NEW NAME
         name = '_'.join(['-'.join(strs),'-'.join(map(str, ints)),'_'.join(bool_strs)])
         # make new directory to store results
         L = len(name)
-        i = 0  # duplicate models?
         # if model is fully complete, don't overwrite
         if make_new:
+            i = 0
             while os.path.exists(f"{save_dir}/{name}/{self.ne}_{name}_pol.pth"):
-                name = name[:L]+str(i)
                 i += 1
+                name = name[:L]+f"_{i}"
+            self.run_no = i
+        else:
+            try:
+                if self.run_no:
+                    name += f"_{self.run_no}"
+            except AttributeError:
+                pass
         if not os.path.exists(f"{save_dir}/{name}"):
             os.mkdir(f"{save_dir}/{name}")
         # SET NAMES
@@ -344,6 +359,7 @@ def get_config(args: argparse.ArgumentParser) -> Config:
     if args.nb: config.nb = args.nb
     if args.nt: config.nt = args.nt
     if args.ne: config.ne = args.ne
+    if args.book_size: config.nstocks = args.book_size
     
     config.set_name()
     # see if there is an existing plot w the same thing
@@ -352,6 +368,11 @@ def get_config(args: argparse.ArgumentParser) -> Config:
     make_new = not (args.plot or args.expand)
     print(oldconfig.name)
     if oldconfig:
+        # old directory is done and we want to make a new one
+        if oldconfig.starting_epoch == config.ne and make_new:
+            config.set_name(make_new=True)
+            config.save()
+            return config
         config = oldconfig
         config.set_name(config.starting_epoch)
         make_new = make_new and not (config.starting_epoch and config.starting_epoch < config.ne)

@@ -1,4 +1,4 @@
-from MarketMaker.marketmaker import MarketMaker
+from MarketMaker.marketmaker import MarketMaker, MaskedMarketMaker
 from MarketMaker.config import get_config, search_for_config
 from MarketMaker.util import np, torch, glob
 
@@ -6,7 +6,6 @@ import argparse, os
 
 parser = argparse.ArgumentParser()
 parser.add_argument("-l", "--load",   help='load a model from a results/name directory')
-parser.add_argument("-r", "--resume", action='store_true', help='resume training from a model')
 parser.add_argument("-p", "--plot", action='store_true', help='dont train, just plot')
 parser.add_argument("--expand", help='add epochs to existing model', type=int)
 
@@ -16,7 +15,7 @@ parser.add_argument("-ne", "--ne", help="number of epochs to train policy for", 
 parser.add_argument("-nb", "--nb", help="number of trajectories to sample for each policy update", type=int)
 parser.add_argument("-nt", "--nt", help="number of timesteps to progress trajectory for", type=int)
 parser.add_argument("-lr", "--lr", help="learning rate for the policy (Adam) optimizer", type=float)
-parser.add_argument("-opt", "--optimizer", help="String name for the optimizer (like Adam, AdamW, SGD... case sensitive)", type=float)
+#parser.add_argument("-opt", "--optimizer", help="String name for the optimizer (like Adam, AdamW, SGD... case sensitive)", type=str)
 parser.add_argument("--noclip", "-nc", help='dont clip the ratio in PPO', action='store_true', 
                     )
 parser.add_argument("--noppo", '-np', help='dont use PPO, just use regular policy grad', action='store_true', 
@@ -30,7 +29,7 @@ parser.add_argument("--add-time", "-at", help='add time to immediate reward', ac
 parser.add_argument("--add-inventory", "-ai", help='add inventory to immediate reward', action='store_true', )
 parser.add_argument("--always-final", "-af", help='always liquidate at termination', action='store_true', )
 parser.add_argument("--plot-after", "-pa", help='plot the market after this many epochs', type=int, default=100)
-parser.add_argument("--seed", default=0, type=int)
+parser.add_argument("--seed", default=-1, type=int)
 # TD LAMBDA STUFF?
 parser.add_argument("--td", "--TD", "-td", action='store_true')
 parser.add_argument("--good-results", help='update plots for all good results', action='store_true')
@@ -46,8 +45,7 @@ if __name__ == "__main__":
     #   SET A SEED? Feel like we need complete randomness for this though... is there anyway to 
     #        dynamically change the seed as we progress through different epochs?       
     #
-    set_seed = False
-    if set_seed:
+    if args.seed >= 0:
         torch.manual_seed(args.seed)
         np.random.seed(args.seed)
     """ Initialize a configuration file, storing all the hyperparameters for the market

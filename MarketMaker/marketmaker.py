@@ -1,10 +1,10 @@
 try:  # run from outside of the folder
-    from MarketMaker.util import np, torch, plot_WIM, export_plot, np2torch, arrs_to_masked, uFormat
+    from MarketMaker.util import np, torch, plot_WIM, export_plot, np2torch, arrs_to_masked, uFormat, get_finals
     from MarketMaker.config import Config
     from MarketMaker.rewards import Market
     from MarketMaker.policy import Policy
 except ModuleNotFoundError:   # run from within the folder
-    from util import np, torch, plot_WIM, export_plot, np2torch, arrs_to_masked, uFormat
+    from util import np, torch, plot_WIM, export_plot, np2torch, arrs_to_masked, uFormat, get_finals
     from config import Config
     from rewards import Market
     from policy import Policy
@@ -18,13 +18,14 @@ class UniformMarketMaker():
     def __init__(self, config: Config, inventory=0, wealth=0) -> None:
         self.config = config
         self.market = Market(inventory, wealth, config)
-        self.logger = self.config.logger
+        self.book = self.market.book
         self.P = Policy(config)
+
+        self.logger = self.config.logger
         self.logger.info(self.config)
-        self.do_ppo = config.do_ppo
-        
         msg = self.P.init_policy(self.market, new_train=False)  # train a more robust? initial policy
         self.logger.info(msg)
+        self.do_ppo = config.do_ppo
         self.dt = config.dt; self.max_t = config.max_t
         self.nt = config.nt
         self.final_returns = []  # track returns during training
@@ -77,11 +78,11 @@ class UniformMarketMaker():
         self.logger.info(f"Loaded policy network from {name}_pol.pth")
         try:  # works with variable length final stuff
             self.final_returns = [list(final) for final in np.load(name+"_scores.npz")['data']]
-            self.final_values = [list(value) for value in np.load(name+"_scores.npz")['data']]
+            self.final_values = [list(value) for value in np.load(name+"_values.npz")['data']]
         except FileNotFoundError:
             try:
                 self.final_returns = np.load(name + "_scores.npy")
-                self.final_values = np.load(name + "_scores.npy")
+                self.final_values = np.load(name + "_values.npy")
                 print(self.final_returns.shape, self.final_values.shape)
                 self.final_returns = list(self.final_returns)
                 self.final_values = list(self.final_values)
@@ -141,7 +142,7 @@ class UniformMarketMaker():
                 dW, dI, midprice = self.market.step()   # (dW, dI, midprice)
                 if dW is ValueError:
                     lambda_sell = dI; lambda_buy = midprice
-                    print(f"Batch {b} step {t} INVALID lambdas, ({lambda_sell}, {lambda_buy}), on book {self.market.book}")
+                    print(f"Batch {b} step {t} INVALID lambdas, ({lambda_sell}, {lambda_buy}), on book {self.book}")
                     self.market.reset(plot=True, make_bell=True)
                     break
                 reward_state = (dW, dI) + time_left
@@ -151,7 +152,7 @@ class UniformMarketMaker():
                 if track_all:
                     wealth[b, t] = W
                     inventory[b, t] = I
-                    states[b, t] = (midprice, midprice-self.market.book.delta_b, midprice+self.market.book.delta_a)
+                    states[b, t] = (midprice, midprice-self.book.delta_b, midprice+self.book.delta_a)
             rewards[b, t] += self.market.final_reward(W, I, midprice)
             values[b] = W + I*midprice
             if pbar: pbar.update(1)
@@ -183,7 +184,7 @@ class UniformMarketMaker():
                     returns = self.P.get_returns(paths['rew'])
                 elif self.config.trajectory == 'TD':
                     values = self.P.baseline.network(np2torch(paths['tra'])).detach().cpu().numpy()
-                    returns = self.P.get_td_returns(paths['rew'], values, self.nt, nbatch)
+                    returns = self.P.get_td_returns(paths['rew'], values)
                 else:
                     raise NotImplementedError("Trajectory type not supported")
                 advantages = self.P.get_advantages(returns, paths['tra'])
@@ -221,7 +222,7 @@ class UniformMarketMaker():
             for t in range(nt):
                 time_left = (T - t*dt,)
                 state = self.market.state() + time_left
-                old_book = self.market.book.copy()
+                old_book = self.book.copy()
                 # actions have been changed to deltas
                 limit_act = list(self.market.act(state, self.P.policy.act))
                 limit_act[1] = old_book.midprice - limit_act[1]
@@ -252,10 +253,14 @@ class UniformMarketMaker():
         if plot_book:
             self.plot_book_path(nt=nt, wait_time=wait_time)      
 
-class MasketMarketMaker(UniformMarketMaker):
+class MaskedMarketMaker(UniformMarketMaker):
     def __init__(self, config: Config, inventory=0, wealth=0) -> None:
         super().__init__(config, inventory, wealth)
         self.book_quit = config.book_quit  # quit if book is empty
+        if self.book_quit:
+            self.train = self.masked_train
+            self.get_paths = self.get_masked_paths
+            self.logger.info('using masked training!')
 
     def get_masked_paths(self, pbar, nt=0, nb=0, track_all=False) -> np.ma.MaskedArray:
         """ 
@@ -268,11 +273,7 @@ class MasketMarketMaker(UniformMarketMaker):
         if PPO, also outputs log probs of actions in ['old'] 
         """
         dt = self.dt
-        if not nt: 
-            nt = self.nt
-            T = self.max_t
-        else:
-            T = nt*dt
+        if not nt: nt = self.nt
         nbatch = nb if nb else self.config.nb
         val_dim = self.config.val_dim
         obs_dim = self.config.obs_dim
@@ -294,34 +295,54 @@ class MasketMarketMaker(UniformMarketMaker):
             inventory.mask = True
             states = np.ma.empty((nbatch, nt, 3))
             states.mask = True
+        avg_timestep = 0
         for b in range(nbatch):
             self.market.reset()
-            W = self.market.W; I = self.market.I  # starting wealth, inventory
-            # timestep
+            W = self.market.W; I = self.market.I # starting wealth, inventory
+            terminated = False
+            midprice = self.book.midprice
             for t in range(nt):
-                time_left = (T - t*dt,)
+                time_left = (nt*dt - t*dt,)
                 state = self.market.state() + time_left
+                past_book = str(self.book)
                 if self.do_ppo:  # need to get log probability directly
                     action, logprob = self.P.policy.act(np.array(state), return_log_prob=True)
-                    logprobs[b, t] = logprob
                     self.market.submit(*action)
                 else:
                     action = self.market.act(state, self.P.policy.act)
+                if self.book_quit and self.market.is_empty():  #  we have deleted the LOB ourselves!
+                    self.logger.info(f'Action {tuple(map(lambda x: uFormat(x), action))} on book {past_book} emptied book!')
+                    terminated = True
+                    break
+                past_book = str(self.book)
+                dW, dI, midprice = self.market.step()
+                if dW is ValueError:
+                    lambda_sell, lambda_buy = dI, midprice
+                    print(f"Batch {b} step {t} INVALID lambdas, ({lambda_sell}, {lambda_buy}), on book {past_book}")
+                    self.market.reset(plot=True, make_bell=True)
+                    break
+                if self.book_quit and self.market.is_empty():  # market step has quit the book. 
+                    terminated = True
+                    break   # quit if either bids or asks are empty
+                W += dW; I += dI    
+                if self.do_ppo: logprobs[b, t] = logprob
                 actions[b, t] = action
-                dW, dI, midprice = self.market.step()   # (dW, dI, midprice)
                 reward_state = (dW, dI) + time_left
                 rewards[b, t] = self.market.reward(reward_state)
                 trajectories[b, t] = state + (dW, dI)
                 if track_all:
-                    W += dW; I += dI
                     wealth[b, t] = W
                     inventory[b, t] = I
-                    states[b, t] = (midprice, midprice-self.market.book.delta_b, midprice+self.market.book.delta_a)
-            rewards[b, t] += self.market.final_reward(W, I, self.market.book.midprice)
+                    states[b, t] = (midprice, midprice-self.book.delta_b, midprice+self.book.delta_a)
+            if not terminated or self.config.always_final:
+                rewards[b, t] += self.market.final_reward(W, I, self.book.midprice)
             if pbar:
                 pbar.update(1)
+            avg_timestep += t+1
+        avg_timestep /= nbatch
+        self.logger.info(f"Average trajectory length: {avg_timestep}")
         observations = trajectories[...,:obs_dim]
-        paths = {"tra": trajectories, "obs": observations, "act": actions, "rew": rewards}
+        paths = {"tra": trajectories, "obs": observations, "act": actions, "rew": rewards, "val": W+I*midprice}
         if self.do_ppo:
             paths["old"] = logprobs
         if track_all:
@@ -345,12 +366,10 @@ class MasketMarketMaker(UniformMarketMaker):
                 if self.config.trajectory == 'MC':
                     returns = self.P.get_returns(paths['rew'])
                 elif self.config.trajectory == 'TD':
-                    values = self.P.baseline.network(np2torch(paths['tra'])).detach().cpu().numpy()
-                    returns = self.P.get_td_returns(paths['rew'], values, self.nt, nbatch)
+                    returns = self.P.get_returns(paths['rew'], paths['tra'])
                 else:
                     raise NotImplementedError("Trajectory type not supported")
                 advantages = self.P.get_advantages(returns, paths['tra'])
-
                 # Policy updates
                 for C in range(self.config.update_freq):
                     if self.config.use_baseline:
@@ -358,12 +377,13 @@ class MasketMarketMaker(UniformMarketMaker):
                     self.P.update_policy(paths['obs'], paths['act'], advantages, old_logprobs=paths.get('old'))
 
                 # Log the returns
-                self.final_returns.append(returns[:, -1])
+                self.final_returns.append(get_finals(returns))
+                self.final_values.append(paths['val'])
                 self.save(epoch + 1)   # intermediately save the market maker for later loading
 
                 # Plot if required
                 if do_plot:
-                    plot_WIM(paths, self.dt, title=f'epoch {epoch}', savename=self.config.out+'.png')
+                    plot_WIM(paths, self.dt, title=f'epoch {epoch}', savename=self.config.wim_plot)
 
         self.logger.info("Training complete!")  # DONZO BONZO
         self.save(epoch + 1, True)
@@ -378,6 +398,7 @@ class MarketMaker(UniformMarketMaker):
             self.train = self.sparse_train
             self.get_paths = self.get_sparse_paths
             self.config.logger.info('using sparse training!')
+
     
     def get_sparse_paths(self, pbar, nt=0, nb=0, track_all=False) -> list[dict[list]]:
         """ get trajectories and compute rewards, only observing immediate state
@@ -417,7 +438,7 @@ class MarketMaker(UniformMarketMaker):
             for t in range(nt):
                 time_left = (T - t*dt,)
                 state = self.market.state() + time_left
-                past_book = str(self.market.book)
+                past_book = str(self.book)
                 if self.do_ppo:  # need to get log probability directly
                     action, logprob = self.P.policy.act(state, return_log_prob=True)
                     self.market.submit(*action)
@@ -427,7 +448,7 @@ class MarketMaker(UniformMarketMaker):
                     self.logger.info(f'Action {tuple(map(lambda x: uFormat(x), action))} on book {past_book} emptied book!')
                     terminated = True
                     break   # quit if either bids or asks are empty
-                past_book = str(self.market.book)
+                past_book = str(self.book)
                 dW, dI, midprice = self.market.step()
                 if dW is ValueError:
                     lambda_sell = dI; lambda_buy = midprice
@@ -448,12 +469,12 @@ class MarketMaker(UniformMarketMaker):
                 if track_all:
                     wealth.append(W)
                     inventory.append(I)
-                    states.append((midprice, midprice-self.market.book.delta_b, midprice+self.market.book.delta_a))
+                    states.append((midprice, midprice-self.book.delta_b, midprice+self.book.delta_a))
             if not terminated or self.config.always_final:
                 if len(rewards):
-                    rewards[-1] += self.market.final_reward(W, I, self.market.book.midprice)
+                    rewards[-1] += self.market.final_reward(W, I, self.book.midprice)
                 else:
-                    rewards = [self.market.final_reward(W, I, self.market.book.midprice)]
+                    rewards = [self.market.final_reward(W, I, self.book.midprice)]
             pbar.update(1)
             if not len(trajectories):
                 continue

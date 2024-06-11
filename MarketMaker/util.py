@@ -15,6 +15,7 @@ from scipy.optimize import curve_fit
 import torch
 import torch.nn as nn
 import logging
+import torch.masked as masked
 #from torch.masked import masked_tensor
 
 # CONFIGURE MODULES
@@ -32,42 +33,62 @@ np.set_printoptions(precision=4)
 
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 def np2torch(x, requires_grad=False, cast_double_to_float=True):
-    #mask = 0
-    #if isinstance(x, np.ma.masked_array):
-    #    mask = torch.from_numpy(x.mask).to(device)
+    ''' for some reason, numpy convention is to have mask=True 
+    when the mask is on, while torch has mask=False when the mask 
+    is on, so make sure to invert the mask between the two.'''
     if isinstance(x, np.ma.MaskedArray):
-        x = torch.from_numpy(x).to(device)
-        mask = torch.from_numpy(x.mask).to(device)
-        x = torch.masked.as_masked_tensor(x, mask)
+        mask = torch.from_numpy(~x.mask)
+        x = torch.from_numpy(x.data)
+        x = torch.masked.as_masked_tensor(x, mask).to(device)
     elif isinstance(x, np.ndarray):
         x = torch.from_numpy(x).to(device)
     else:
         x = torch.Tensor(x).to(device)
-    if cast_double_to_float and x.dtype == torch.float64:
-        x = x.float()  # cast double to float
     if requires_grad:
         x = x.float()
         x.requires_grad = True
+    elif cast_double_to_float and x.dtype == torch.float64:
+        x = x.float()
     return x
 
-def build_masked_mlp(input_size, output_size, n_layers, hidden_size, activation=nn.ReLU()):
-    """ build a multi-layer perceptron that has an input and output of torch.masked.MaskedTensor """
-    layers = [nn.Linear(input_size,hidden_size),activation]
-    for i in range(n_layers-1):
-        layers.append(nn.Linear(hidden_size,hidden_size))
-        layers.append(activation)
-    layers.append(nn.Linear(hidden_size, output_size))
-    return nn.Sequential(*layers).to(device)
+def torch2np(x: torch.Tensor | torch.masked.MaskedTensor):
+    if isinstance(x, torch.masked.MaskedTensor):
+        mask = ~x._masked_mask.detach().cpu().numpy()
+        data = x._masked_data.detach().cpu().numpy()
+        return np.ma.MaskedArray(data, mask=mask)
+    return x.detach().cpu().numpy()
 
+
+
+class MaskedSequential(nn.Sequential):
+    """ Version of nn.Sequential that can handle masked tensors """
+    def __init__(self, *args):
+        super().__init__(*args)
+    
+    def forward(self, x):
+        isMasked = isinstance(x, masked.MaskedTensor)
+        if isMasked:
+            mask = x._masked_mask[...,:1]
+            x    = x._masked_data
+            req_grad = x.requires_grad
+        for module in self:
+            x = module(x)
+        if isMasked:
+            # account for different output, input dims
+            newshape = (1,)*(len(x.shape)-1)+(x.shape[-1],)
+            mask = mask.repeat(*newshape)
+            return masked.masked_tensor(x, mask, requires_grad=req_grad).to(device)
+        return x.to(device)
 
 def build_mlp(input_size, output_size, n_layers, hidden_size, activation=nn.ReLU()):
-    """ Build multi-layer perception with n_layers hidden layers of size hidden_size """
+    """ Build multi-layer perception with n_layers hidden layers of size hidden_size. 
+    network input can be torch.Tensor or torch.masked.MaskedTensor """
     layers = [nn.Linear(input_size,hidden_size),activation]
     for i in range(n_layers-1):
         layers.append(nn.Linear(hidden_size,hidden_size))
         layers.append(activation)
     layers.append(nn.Linear(hidden_size, output_size))
-    return nn.Sequential(*layers).to(device)
+    return MaskedSequential(*layers)
 
 def get_logger(filename):
     """ Return a logger instance to a file """
@@ -83,6 +104,32 @@ def get_logger(filename):
 def normalize(x):
     """ Normalize np.ndarray or torch.Tensor """
     return (x - x.mean()) / (x.std() + 1e-10)
+
+def get_lengths(arr: np.ma.MaskedArray) -> np.ndarray:
+    """ print length of the true elements in arr """
+    lengths = np.empty(arr.shape[0], dtype=int)
+    for i in range(arr.shape[0]):  # get last non-masked value in each row
+        trues = np.where(~arr.mask[i])[0]
+        if len(trues.shape) > 1:
+            trues = trues[:,0]  # we dont care about obs_dim
+        if not len(trues): 
+            lengths[i] = 0
+            continue
+        lengths[i] = trues[-1]
+    return lengths
+
+def get_finals(arr: np.ndarray | np.ma.MaskedArray) -> np.ndarray:
+    """ Get final returns from batched returns of shape (nb x nt) """
+    if not isinstance(arr, np.ma.MaskedArray):
+        return arr[:,-1]
+    finals = np.empty(arr.shape[0])
+    for i in range(arr.shape[0]):  # get last non-masked value in each row
+        trues = np.where(~arr.mask[i])[0]
+        if not len(trues):
+            finals[i] = 0
+            continue
+        finals[i] = arr[i, trues[-1]]
+    return finals
 
 def arrs_to_masked(arrays: list[list]):
     """
@@ -183,18 +230,17 @@ def export_plot(y, ylabel, title, filename):
     plt.close()
 
 """ Used for exponential value functions """
-class Exponential(torch.nn.Module):
+class Exponential(nn.Module):
     def __init__(self):
         super().__init__()
-        self.a = torch.nn.Parameter(torch.randn(()))
-        self.b = torch.nn.Parameter(torch.randn(()))
+        self.a = nn.Parameter(torch.randn(()))
+        self.b = nn.Parameter(torch.randn(()))
 
     def forward(self, x):
         return -abs(self.a) * torch.exp(-abs(self.b) * x)
 
-    def string(self):
+    def __repr__(self):
         return f'y = -{abs(self.a.item())} * exp(-{abs(self.b.item())} x)'
-
 
 def uFormat(number, uncertainty=0, figs = 4, shift = 0, FormatDecimals = False):
     """

@@ -1,17 +1,20 @@
-import logging, os
+import os
 try:
-    from MarketMaker.util import np, torch, np2torch, build_mlp, normalize
+    from MarketMaker.util import np, torch, np2torch, torch2np, build_mlp, normalize, device
     from MarketMaker.rewards import Market
     from MarketMaker.config import Config
 except ModuleNotFoundError:
-    from util import np, torch, np2torch, build_mlp, normalize
+    from util import np, torch, np2torch, torch2np, build_mlp, normalize, device
     from rewards import Market
     from config import Config
 import torch.nn as nn
 import torch.distributions as ptd
+import torch.masked as masked
 from tqdm import tqdm
 from collections import OrderedDict
+import sys
 
+""" Policy module that works with regular or masked tensors/arrays"""
 
 class BasePolicy:
     def action_distribution(self, observations: torch.Tensor):
@@ -22,15 +25,34 @@ class BasePolicy:
             distribution: instance of a subclass of torch.distributions.Distribution
         """
         raise NotImplementedError
+    
+    def log_probs(self, distribution: ptd.Distribution, actions: torch.Tensor | masked.MaskedTensor):
+        """ Return log probs of actions """
+        if isinstance(actions, masked.MaskedTensor):
+            data = torch.nan_to_num(actions._masked_data, 1)
+            mask = actions._masked_mask[...,0].detach()  # bc probs are 1D
+            req_grad = actions.requires_grad
+            probs = distribution.log_prob(data).detach()
+            return masked.masked_tensor(probs, mask, requires_grad=req_grad)
+        return distribution.log_prob(actions)
+    
+    def entropy(self, distribution: ptd.Distribution, observations: torch.Tensor | masked.MaskedTensor):
+        """ Return entropy of the distribution """
+        entropy = distribution.entropy()
+        if not isinstance(observations, masked.MaskedTensor):
+            return entropy     # bc entropy is 1D
+        mask = observations._masked_mask[...,0].detach()
+        req_grad = observations.requires_grad
+        return masked.masked_tensor(entropy.detach(), mask, requires_grad=req_grad)
 
     def act(self, observations: np.ndarray, return_log_prob = False):
         """ Return np.ndarray actions (and log probs)? from action distribution """
         observations = np2torch(observations)
         distribution = self.action_distribution(observations)
         actions = distribution.sample()
-        sampled_actions = actions.cpu().detach().numpy()
+        sampled_actions = torch2np(actions)
         if return_log_prob:
-            log_probs = distribution.log_prob(actions).cpu().detach().numpy()
+            log_probs = torch2np(self.log_probs(distribution, actions))
             return sampled_actions, log_probs
         return sampled_actions
 
@@ -43,7 +65,10 @@ class CategoricalPolicy(BasePolicy, nn.Module):
 
     def action_distribution(self, observations):
         """ Discrete action distribution """
-        return ptd.Categorical(logits=self.network(observations))
+        vals = self.network(observations)
+        if isinstance(vals, masked.MaskedTensor):
+            vals = vals._masked_data.nan_to_num(0)
+        return ptd.Categorical(logits=vals)
 
 
 class GaussianPolicy(BasePolicy, nn.Module):
@@ -58,7 +83,10 @@ class GaussianPolicy(BasePolicy, nn.Module):
 
     def action_distribution(self, observations):
         """ continuous action distribution for given observations """
-        return ptd.MultivariateNormal(self.network(observations), scale_tril=torch.diag(self.std()))
+        means = self.network(observations)
+        if isinstance(means, masked.MaskedTensor):
+            means = means._masked_data.nan_to_num(0)
+        return ptd.MultivariateNormal(means, scale_tril=torch.diag(self.std()))
 
 
 ##########################################
@@ -73,12 +101,18 @@ class BaselineNetwork(nn.Module):
         self.optimizer = torch.optim.Adam(params=self.network.parameters(),lr=config.lr)
     
     def forward(self, observations: torch.Tensor):
-        return self.network(observations).squeeze()
+        values = self.network(observations)
+        if isinstance(values, masked.MaskedTensor):
+            """ implement a masked tensor squeeze """
+            mask = values._masked_mask.squeeze()
+            data = values._masked_data.squeeze()
+            req_grad = values.requires_grad
+            return masked.masked_tensor(data, mask, requires_grad=req_grad).to(device)
+        return values.squeeze()
 
     def calculate_advantage(self, returns: np.ndarray, observations: np.ndarray):
         """ Compute advantages given returns """
-        observations = np2torch(observations)
-        return returns - self.forward(observations).cpu().detach().numpy()
+        return returns - torch2np(self.forward(np2torch(observations)))
 
     def update_baseline(self, returns: np.ndarray, observations: np.ndarray):
         """ Gradient baseline to match returns """
@@ -183,16 +217,34 @@ class PolicyGradient():
 
     def get_returns(self, rewards: np.ndarray | np.ma.MaskedArray) -> np.ndarray | np.ma.MaskedArray:
         """ Classic returns from batched rewards of shape (nb x nt) """
-        if isinstance(rewards, np.ma.MaskedArray):
-            returns = np.ma.empty(rewards.shape)
-            returns[:] = np.ma.masked
-        else:
-            returns = np.empty_like(rewards)
+        isMasked = isinstance(rewards, np.ma.MaskedArray)
+        returns = np.empty_like(rewards)
+        if isMasked:
+            mask = rewards.mask
+            rewards = rewards.filled(0)   # we want to add when OR on the masks
         returns[:, -1] = rewards[:, -1]
         for t in reversed(range(rewards.shape[1]-1)):
             returns[:, t] = rewards[:, t] + self.discount*rewards[:, t+1]
+        if isMasked:
+            returns = np.ma.masked_array(returns, mask)
         return returns
     
+    def get_td_returns(self, rewards: np.ndarray | np.ma.MaskedArray, observations: np.ndarray | np.ma.MaskedArray) -> np.ndarray | np.ma.MaskedArray:
+        """ Compute TD(λ) returns """
+        isMasked = isinstance(rewards, np.ma.MaskedArray)
+        returns = np.empty_like(rewards)
+        values = torch2np(self.baseline.forward(np2torch(observations)))
+        if isMasked:
+            mask = rewards.mask
+            rewards = rewards.filled(0)  # we want to add when OR on the masks
+            values = values.filled(0)
+        returns[:, -1] = rewards[:, -1] + self.discount * values[:, -1]
+        for t in reversed(range(rewards.shape[1]-1)):
+            returns[:, t] = rewards[:, t] + self.discount * ((1 - self.lambd) * values[:, t+1] + self.lambd * returns[:, t+1])
+        if isMasked:
+            returns = np.ma.masked_array(returns, mask)
+        return returns
+
     def get_uneven_returns(self, paths: list) -> np.ndarray:
         """ Compute discounted returns from batched rewards of shape (nbatch x nt) """
         all_returns = []
@@ -206,16 +258,6 @@ class PolicyGradient():
                 returns[t] = rewards[t] + self.discount*rewards[t+1]
             all_returns.append(returns)
         return np.concatenate(all_returns), np.array(finals)
-    
-    def get_td_returns(self, rewards, values):
-        """ Compute TD(λ) returns """
-        td_lambda_returns = np.zeros_like(rewards)
-        for b in range(rewards.shape[0]):
-            G = rewards[b, -1] + self.config.discount * values[b, -1]
-            for t in reversed(range(rewards.shape[1]-1)):
-                G = rewards[b, t] + self.config.discount * ((1 - self.config.lambd) * values[b, t+1] + self.config.lambd * G)
-                td_lambda_returns[b, t] = G
-        return td_lambda_returns
 
     def get_uneven_td_returns(self, paths: list) -> np.ndarray:
         """ Comupte uneven TD(λ) returns """
@@ -224,14 +266,13 @@ class PolicyGradient():
         for path in paths:
             rewards = path['rew']
             returns = np.empty_like(rewards)
-            values = self.baseline.forward(np2torch(path['tra'])).cpu().detach().numpy()
+            values = torch2np(self.baseline.forward(np2torch(path['tra'])))
             returns[-1] = rewards[-1]
             G = rewards[-1] + self.config.discount * values[-1]
             returns[-1] = G
             finals.append(G)
             for t in reversed(range(len(rewards)-1)):
-                G = rewards[t] + self.config.discount * ((1 - self.config.lambd) * values[t+1] + self.config.lambd * G)
-                returns[t] = G
+                returns[t] = rewards[t] + self.config.discount * ((1 - self.config.lambd) * values[t+1] + self.config.lambd * returns[t+1])
             all_returns.append(returns)
         return np.concatenate(all_returns), np.array(finals)
     
@@ -264,7 +305,7 @@ class PolicyGradient():
         actions = np2torch(actions, True)
         advantages = np2torch(advantages, True)
         distribution = self.policy.action_distribution(observations)
-        log_probs = distribution.log_prob(actions)
+        log_probs = self.policy.log_probs(distribution, actions)
         self.optimizer.zero_grad()
         loss = -torch.mean(log_probs*advantages)
         loss.backward()
@@ -305,9 +346,9 @@ class Policy(PolicyGradient):
         old_logprobs = np2torch(old_logprobs, True)
         
         distribution = self.policy.action_distribution(observations)
-        log_probs    = distribution.log_prob(actions)
+        log_probs    = self.policy.log_probs(distribution, actions)
         z_ratio      = torch.exp(log_probs - old_logprobs)
-        entropy_loss = distribution.entropy()
+        entropy_loss = self.policy.entropy(distribution, observations)
         if self.do_clip:
             clip_z   = torch.clip(z_ratio,1-self.eps_clip,1+self.eps_clip)
             minimum  = torch.min(z_ratio*advantages,clip_z*advantages)

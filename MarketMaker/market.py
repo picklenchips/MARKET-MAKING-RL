@@ -14,6 +14,13 @@ class BaseMarket():
         self.I = inventory
         self.W = wealth
         # update book later using self.init_book()
+        # initial book parameters:
+        self.midprice = config.midprice
+        self.spread = config.spread
+        self.nstocks = config.nstocks
+        self.make_bell = config.make_bell
+        self.substeps = config.substeps
+        self.nsteps = config.nsteps
         self.book = LOB()
     # --- market order parameters --- #
         # OLD
@@ -33,8 +40,6 @@ class BaseMarket():
         self.betas = (7.2, -2.13, -0.8, -2.3, 0.167, -0.1)
 
         # action stuff
-        self.sigma = config.sigma
-        self.gamma = config.gamma 
         self.max_t = config.max_t  # second
         self.dt    = config.dt   # millisecond
         # reward stuff
@@ -43,9 +48,16 @@ class BaseMarket():
         self.discount = config.discount
 
     def reset(self, mid=533, spread=10, nstocks=10000, nsteps=1000, substeps=1, 
-              make_bell=True, plot=False, step_through=0):
+              make_bell=True, plot=False, step_through=0, use_config=True):
         """ Randomly initialize order book 
         - nstocks is num stocks on each side """
+        if use_config:
+            mid = self.midprice
+            spread = self.spread
+            nstocks = self.nstocks
+            nsteps = self.nsteps
+            substeps = self.substeps
+            make_bell = self.make_bell
         if self.book: del(self.book)
         self.book = LOB(mid)
         # start with symmetric spread
@@ -65,6 +77,10 @@ class BaseMarket():
             if not plot: 
                 return
         # start with symmetric spread and market-step
+        # also used to test LOB initialization
+        if not make_bell:
+            self.book.bid(nstocks//2, mid-spread/2)
+            self.book.ask(nstocks//2, mid+spread/2)
         for t in range(nsteps):
             # perform random MARKET ORDERS
             old_book = self.book.copy()
@@ -122,7 +138,7 @@ class BaseMarket():
                 nbuy  = np.random.poisson(lambda_buy)
                 nsell = np.random.poisson(lambda_sell)
             except ValueError:
-                # the lambda function has killed itself
+                # the lambda function has somehow killed itself
                 if plot:
                     return ValueError, lambda_sell, lambda_buy, (nsell, self.book.high_bid, nbuy, self.book.low_ask)
                 return ValueError, lambda_sell, lambda_buy

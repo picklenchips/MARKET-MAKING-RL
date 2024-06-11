@@ -46,6 +46,7 @@ if torch.cuda.is_available():
     torch.set_default_tensor_type('torch.cuda.FloatTensor')
     torch.set_default_dtype(torch.float32)
 elif torch.backends.mps.is_available():
+    pass
     #device = "mps"
 
 def np2torch(x, requires_grad=False, cast_double_to_float=True):

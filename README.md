@@ -8,7 +8,7 @@ We begin with the simplest assumptions for market dynamics and a utility functio
 
 ## Organization
 
-`main.py` is run with arguments to train a `MarketMaker` within the directory setup, storing results in `results/`. It works as follows:
+`main.py` is run with arguments to train a `MarketMaker` within the directory setup, storing results in `results/`. The path of the code is as follows:
 1. a `Config` is created from the arguments to store all hyperparameters and flags as well as organize the files in `results/`
 2. a `MarketMaker` is created from the `Config`
 3. `MarketMaker` creates a `Policy` and `Market`, loading an existing `BasePolicy` and `BaseNetwork` state dict if necessary

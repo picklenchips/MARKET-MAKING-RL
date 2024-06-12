@@ -3,12 +3,12 @@ Creating a market-making RL agent in the high-frequency trading (HFT) setting fo
 Our full paper is found [here](https://github.com/user-attachments/files/15811478/CS234_Paper___HFT_Market_Making.3.pdf). 
 As opposed to past RL attempts on the problem of market-making in the HFT setting, we physically implement the limit order book (LOB) when simulating our algorithm, which means that the market dynamics are explieiclty dependent on the (sum) of the market-makers actions. 
 
-## Model & Assumptions
+## Background
 
 Market-makers provide the liquidity of the stock market, allowing people to buy and sell stocks. 
 Liquidity is provided as "limit orders" in the form of **asks** that allow the market to buy stocks and **bids** that allow the market to sell stocks.
 A limit order has both a price and a number of stocks, and a **limit order book (LOB)** contains all bids and asks provided by a market maker.
-As a market-maker is only one provider of liquidity among many for stock, the **midprice** of a stock is decoupled from any one market and evolves over time according to a stochastic Brownian motion. The **bids** and **asks** are centered around the midprice with a certain spread of $\delta_b$, $\delta_a$ respectively:
+As a market-maker is only one provider of liquidity among many for stock, the **midprice** of a stock is decoupled from any one market and evolves over time according to a stochastic Brownian motion as the random variable $S_t$. The **bids** and **asks** are centered around the midprice with a difference of $\delta_b$, $\delta_a$ respectively, and a total spread of $\delta_b+\delta_a$:
 
 <img width=80% alt="limit-order book" margin-left=auto margin-righ=auto
   src="https://github.com/picklenchips/MARKET-MAKING-RL/assets/77514590/5ee3a6f3-f357-4c97-833e-840bc96d7b17">
@@ -23,7 +23,34 @@ $$\lambda(s,\delta) = \exp\left( \vec{\beta} \cdot
 
 where $\vec{\beta}$ contains the 6 parameters $\beta_i$ which we fit by fitting a stochastic linear regression on a day's worth of S&P500 data. We verify that the shape of the parameters match our expectation by plotting the derived lambda equation (as a function of $s$, $\delta$ separately) [on Desmos](https://www.desmos.com/calculator/kgcnsxxsdw).
 
+## RL Model
+We simulate market trajectories over uniformly spaced time intervals of $dt$. In reality, the arrival of discrete market orders itself follows a Poisson process with $\lambda=\overbar{dt}$, but this doesn't matter for the high-frequency limit where we assume market order rates aren't coupled in time (besides inherent coupling via the time-evolution of the LOB). We find that $\overbar{dt}\approx$ 1 millisecond. We simulate market trajectories of up to 10,000 timesteps, corresponding to a total simulation time of 10 seconds. 
 
+At each timestep, we first observe the state of the market, then place an action by submitting limit orders, and finally evolve the market one step and observe how the market has changed the LOB. We update our internal wealth $W$ and inventory $I$ by the market orders placed on the LOB, and keep track of our utility / reward function for each timestep.
+
+Our observation at time $t$ is
+$$O_t = (S,W,I,q^b,\delta^b,q^a,\delta^a)_t,$$
+where $S$ is the midprice, $W$ is the total wealth of the market maker, $I$ is the total inventory of the market maker, $q$ is the quantity of stocks in the best bid/ask, and $p$ is the spread of the best bid/ask from the midprice.
+
+We take actions of the form 
+$$A_t = (q^b, \delta^b, q^a, \delta^a)_t$$
+which covers placing any number and price of bids and asks. We allow all of these numbers to be continuous and truncate them as necessary to ensure $q$ is an integer and bids are placed at values of cents.
+We allow the palcement of a negative number of bids and asks to remove existing bids and asks from the LOB, effectively widening the spread.
+
+### Reward Functions
+Our goal is to optimize the final value of the agent at the terminal time. Assuming the agent is free to liquidate all of its stocks at the current midprice (using another market), its final value is 
+$$V_T = W_T+I_TS_T.$$
+To incentivize this behavior, we consider both an intermediate reward at each timestep and a final reward once the market has reached a terminal time, which parallels the rewards seen in prevous similar implementations (the CARA final utility from [Lim & Grose, 2018](https://discovery.ucl.ac.uk/id/eprint/10116730/1/RLforHFMM.pdf) and the various reward schema used in [Guo, Lin, and Huang, 2023](https://arxiv.org/abs/2305.15821)).
+
+We use an intermediate reward of 
+$$R_t = a\cdot dW_t + e^{-b(T-t)}\text{sgn}\left(dI_t\right) + c\cdot t,$$
+where we tune $a,b,c$ to approximately weight each of these components equivalently.
+
+We use a final reward of 
+$$R_T = \alpha - e^{-r V_T}.$$
+
+### Policy
+We use the proximal policy optimization (PPO) algorithm which uses a stochastic policy. While in a the real-world market actions are deterministic, we can always back out a deterministic policy later by taking the means of the learned stochastic policy.
 
 ## Organization
 

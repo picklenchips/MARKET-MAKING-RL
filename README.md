@@ -40,13 +40,12 @@ We allow the palcement of a negative number of bids and asks to remove existing 
 ### Reward Functions
 Our goal is to optimize the final value of the agent at the terminal time. Assuming the agent is free to liquidate all of its stocks at the current midprice (using another market), its final value is 
 $$V_T = W_T+I_TS_T.$$
-To incentivize this behavior, we consider both an intermediate reward at each timestep and a final reward once the market has reached a terminal time, which parallels the rewards seen in prevous similar implementations (the CARA final utility from [Lim & Grose, 2018](https://discovery.ucl.ac.uk/id/eprint/10116730/1/RLforHFMM.pdf) and the various reward schema used in [Guo, Lin, and Huang, 2023](https://arxiv.org/abs/2305.15821)).
-
+To incentivize this behavior, we consider both an intermediate reward at each timestep and a final reward once the market has reached a terminal time, which parallels the rewards seen in prevous similar implementations (the CARA final utility from [Lim & Grose, 2018](https://discovery.ucl.ac.uk/id/eprint/10116730/1/RLforHFMM.pdf) and the various reward schema used in [Guo, Lin, and Huang (2023)](https://arxiv.org/abs/2305.15821)).
 We use an intermediate reward of 
 $$R_t = a\cdot dW_t + e^{-b(T-t)}\text{sgn}\left(dI_t\right) + c\cdot t,$$
 where we tune $a,b,c$ to approximately weight each of these components equivalently.
 
-We use a final reward of 
+We use a final reward of the CARA utility function used by [Lim & Grose (2018)](https://discovery.ucl.ac.uk/id/eprint/10116730/1/RLforHFMM.pdf):
 $$R_T = \alpha - e^{-r V_T}.$$
 
 ### Policy

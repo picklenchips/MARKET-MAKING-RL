@@ -222,6 +222,8 @@ class Config:
         self.base_out = self.save_dir + self.base_name
         self.out  = self.save_dir + name
         self.val_out = self.out+'_val.pth'
+        self.best_val_out = self.out+'_best_val.pth'
+        self.best_pol_out = self.out+'_best_pol.pth'
         self.pol_out = self.out+'_pol.pth'
         self.scores_out  = self.out+'_scores.npz'
         self.scores_plot = self.out+'_scores.png'
@@ -360,6 +362,7 @@ def get_config(args: argparse.ArgumentParser) -> Config:
     if args.nt: config.nt = args.nt
     if args.ne: config.ne = args.ne
     if args.book_size: config.nstocks = args.book_size
+    if args.update_freq: config.update_freq = args.update_freq
     
     config.set_name()
     # see if there is an existing plot w the same thing

@@ -34,6 +34,7 @@ parser.add_argument("--seed", default=-1, type=int)
 parser.add_argument("--td", "--TD", "-td", action='store_true')
 parser.add_argument("--good-results", help='update plots for all good results', action='store_true')
 parser.add_argument('--book-size', '-bs', help='size of the initial book', type=int)
+parser.add_argument('--update-freq', '-uf', help='update frequency of policy', type=int)
 
 
 if __name__ == "__main__":
@@ -63,7 +64,7 @@ if __name__ == "__main__":
             config.set_name(config.starting_epoch, save_dir=results_dir)
             MM = MarketMaker(config)
             MM.load()
-            MM.plot(nb=args.nb if args.nb else 1000)
+            MM.plot(nb=args.nb if args.nb else 200)
         exit()
     config = get_config(args)
     if not config:
@@ -98,7 +99,7 @@ if __name__ == "__main__":
         MM.logger.info(msg)
     if args.plot:
         print(f"Plotting {config.name}")
-        MM.plot(plot_book=True, nb = 1000, nt=800, wait_time=0.5)
+        MM.plot(plot_book=True, nb = 100, wait_time=0.5)
     else:  # do training
         print(f"Training {config.name}")
         MM.train(plot_after=args.plot_after)

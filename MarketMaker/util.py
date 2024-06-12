@@ -179,8 +179,8 @@ def arrs_to_masked_3d(arrays: list[list[list]]):
 
 def plot_trajectory(x, y, ax, color):
     ''' plot trajectory of form (nbatch x nt) '''
-    ys = y.mean(axis = 0)
-    yerrs = y.std(axis = 0)/np.sqrt(y.shape[-1])
+    ys = np.mean(y, axis = 0)
+    yerrs = np.std(y, axis = 0)/np.sqrt(y.shape[-1])
     ax.fill_between(x, ys - yerrs, ys + yerrs, alpha=0.25, color=color)
     ax.plot(x, ys, color=color)
 
@@ -205,6 +205,9 @@ def plot_WIM(paths, dt: float, title='', savename='', isfinal=False):
         mids      = arrs_to_masked([[i[0] for i in traj] for traj in states])
         high_bids = arrs_to_masked([[i[1] for i in traj] for traj in states])
         low_asks  = arrs_to_masked([[i[2] for i in traj] for traj in states])
+        print(get_lengths(mids))
+        print(get_lengths(high_bids))
+        print(get_lengths(low_asks))
     # states is nbatch x nt x (midprice, highest_bid, lowest_ask)
     times = np.arange(0, (wealth.shape[-1]+1)*dt, dt)
     times = times[:wealth.shape[-1]]

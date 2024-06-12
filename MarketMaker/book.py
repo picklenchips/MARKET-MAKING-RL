@@ -194,6 +194,7 @@ class OrderBook():
         # normalize the bin widths
         nbins = 100  # total nbins across range of data
         self.recalculate()
+        brange = 0; arange = 0
         if len(self.asks) and len(self.bids):
             highest_ask = max([a[0] for a in self.asks])
             lowest_bid  = min([-b[0] for b in self.bids])
@@ -225,18 +226,18 @@ class OrderBook():
         if not isinstance(market_order, bool):  # plot market orders
             # market_order = (-n_bid, bid, -n_ask, ask)
             if market_order[0] and market_order[1]:
-                width = brange/bbins
+                width = brange/bbins if brange else 1
                 ax.hist([market_order[1]], weights = [-market_order[0]], bins = [market_order[1]-width/2,market_order[1]+width/2], edgecolor='black', linewidth=1, color='C3', linestyle='dotted')  # purple for bid-hitting
             if market_order[2] and market_order[3]:
-                width = arange/abins
+                width = arange/abins if arange else 1
                 ax.hist([market_order[3]], weights = [-market_order[2]], bins = [market_order[3]-width/2,market_order[3]+width/2], edgecolor='black', linewidth=1, color='C2', linestyle='dotted')  # orange for ask-lifting
         if not isinstance(limit_order, bool):  # agent action
             # limit_order = (n_bid, bid, n_ask, ask)
             if limit_order[0] and limit_order[1]:
-                width = brange/bbins
+                width = brange/bbins if brange else 1
                 ax.hist([limit_order[1]], weights = [limit_order[0]], bins = [market_order[1]-width/2,market_order[1]+width/2], edgecolor='black', linewidth=1, color='C3', linestyle='dashed')
             if limit_order[2] and limit_order[3]:
-                width = arange/abins
+                width = arange/abins if arange else 1
                 ax.hist([limit_order[3]], weights = [limit_order[2]], bins = [market_order[3]-width/2,market_order[3]+width/2], edgecolor='black', linewidth=1, color='C2', linestyle='dashed')
         plt.title(title)
         plt.legend(loc='upper center',ncol=2)

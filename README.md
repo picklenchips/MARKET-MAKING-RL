@@ -1,6 +1,9 @@
 # MARKET-MAKING-RL
-Creating a market-making RL agent in the high-frequency trading setting for Stanford's CS234 final project. 
-Our full paper is found [here](https://github.com/user-attachments/files/15811478/CS234_Paper___HFT_Market_Making.3.pdf)
+Creating a market-making RL agent in the high-frequency trading (HFT) setting for Stanford's CS234 final project. 
+Our full paper is found [here](https://github.com/user-attachments/files/15811478/CS234_Paper___HFT_Market_Making.3.pdf). 
+As opposed to past RL attempts on the problem of market-making in the HFT setting, we physically implement the limit order book (LOB) when simulating our algorithm, which means that the market dynamics are explieiclty dependent on the (sum) of the market-makers actions. 
+
+## Model & Assumptions
 
 Market-makers provide the liquidity of the stock market, allowing people to buy and sell stocks. 
 Liquidity is provided as "limit orders" in the form of **asks** that allow the market to buy stocks and **bids** that allow the market to sell stocks.
@@ -18,7 +21,9 @@ We synthesize these functions to find the most robust and realistic model,
 $$\lambda(s,\delta) = \exp\left( \vec{\beta} \cdot 
 \left[\ln(1 + q),\ (\ln(1 + q))^2,\ \ln(1 + \delta),\ (\ln(1 + \delta))^2,\ \ln(1+\delta+q) \right] \right),$$
 
-where $\vec{\beta}$ contains the 6 parameters $\beta_i$ which we find through fitting stochastically to the SNP500 data.
+where $\vec{\beta}$ contains the 6 parameters $\beta_i$ which we fit by fitting a stochastic linear regression on a day's worth of S&P500 data. We verify that the shape of the parameters match our expectation by plotting the derived lambda equation (as a function of $s$, $\delta$ separately) [on Desmos](https://www.desmos.com/calculator/kgcnsxxsdw).
+
+
 
 ## Organization
 

@@ -6,9 +6,14 @@ Using reinforcement learning to make markets in the high-frequency trading setti
 
 We begin with the simplest assumptions for market dynamics and a utility function, beginning with the theoretical framework outlined in the seminal 2006 paper "[High-frequency trading in a limit order book](https://math.nyu.edu/~avellane/HighFrequencyTrading.pdf)" and moving to more complicated market and utility function models. We quickly realized that this model makes too many assumptions and pivoted into our own environment.
 
-### Organization
+## Organization
 
-`main.py` is run with arguments to train a `MarketMaker` within the directory setup, storing results in `results/`. 
+`main.py` is run with arguments to train a `MarketMaker` within the directory setup, storing results in `results/`. The path of the code is as follows:
+1. a `Config` is created from the arguments to store all hyperparameters and flags as well as organize the files in `results/`
+2. a `MarketMaker` is created from the `Config`
+3. `MarketMaker` creates a `Policy` and `Market`, loading an existing `BasePolicy` and `BaseNetwork` state dict if necessary
+4. `Market` creates an `OrderBook` upon which to simulate trajectories
+5. The `MarketMaker` is then either trained or plotted, according to args.
 
 Arguments to Control Behavior:
 - `--expand` number of epochs to expand a finished run to
@@ -16,7 +21,6 @@ Arguments to Control Behavior:
 - `--plot` just plot a model
 - `--good-results` plot all models located in the directory `/good-results`
 - `--plot-after`, `-pa` number of epochs after which to plot a full batch
-- 
 Arguments to Control Hyperparameters:
 - Training
   - `-nt` number of timesteps per trajectory

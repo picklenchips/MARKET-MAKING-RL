@@ -10,6 +10,12 @@ As a market-maker is only one provider of liquidity among many for stock, the **
 <img width=80% alt="limit-order book" margin-left=auto margin-righ=auto
   src="https://github.com/picklenchips/MARKET-MAKING-RL/assets/77514590/5ee3a6f3-f357-4c97-833e-840bc96d7b17">
 
+The market only interacts with the bids and asks closest to the midprice, buying the cheapest ask and selling the highest bid. Modeling the rate of market orders is an active research field but follows a Poisson process with a rate $\lambda(q,\delta)$ where $q$ is the quantity of the best bid/ask and $\delta$ is the spread of the best bid/ask from the midprice. Combining the results of multiple papers, we find the most robust, realistic model to be
+
+\begin{equation}
+asdfsdf
+\end{equation}
+
 
 
 

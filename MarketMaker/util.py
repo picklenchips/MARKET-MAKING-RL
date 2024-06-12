@@ -25,9 +25,9 @@ FIGSIZE = (10,9)
 textsize = 20  # size of text for overleaf formatting
 
 def reset_matplotlib():
+    mpl.rcParams.update(mpl.rcParamsDefault)
     hexcolors = ['648FFF', 'DC267F', 'FE6100', '785EF0', 'FFB000', '009E73', '3DDBD9', '808080']
     mpl.rcParams['axes.prop_cycle'] = cycler('color', [mpl.colors.to_rgba('#' + c) for c in hexcolors])
-    mpl.rcParams.update(mpl.rcParamsDefault)
     #mpl.rcParams['figure.figsize'] = FIGSIZE
 
 SAVEDIR = os.path.join(os.getcwd(), "plots")
@@ -184,7 +184,7 @@ def plot_trajectory(x, y, ax, color):
     ax.fill_between(x, ys - yerrs, ys + yerrs, alpha=0.25, color=color)
     ax.plot(x, ys, color=color)
 
-def plot_WIM(paths, dt: float, title='', savename='', isfinal=False):
+def plot_WIM(paths, dt: float, title='', savename='', isfinal=True):
     """ plot data from a batch of trajectories
     Inputs: (nbatch x nt) np.ndarrays """
     if isfinal:

@@ -10,22 +10,15 @@ As a market-maker is only one provider of liquidity among many for stock, the **
 <img width=80% alt="limit-order book" margin-left=auto margin-righ=auto
   src="https://github.com/picklenchips/MARKET-MAKING-RL/assets/77514590/5ee3a6f3-f357-4c97-833e-840bc96d7b17">
 
-The market only interacts with the bids and asks closest to the midprice, buying the cheapest ask and selling the highest bid. Modeling the rate of market orders is an active research field but follows a Poisson process with a rate $\lambda(q,\delta)$ where $q$ is the quantity of the best bid/ask and $\delta$ is the spread of the best bid/ask from the midprice. Combining the results of multiple papers, we find the most robust, realistic model to be parametrized by 6 parameters $\vec{\beta}$:
+The market only interacts with the bids and asks closest to the midprice, buying the cheapest ask and selling the highest bid. 
+Modeling the rate of market orders is an active research field but generally follows a Poisson process with a rate $\lambda(q,\delta)$ where $q$ is the quantity of the best bid/ask and $\delta$ is the spread of the best bid/ask from the midprice. 
+We begin with a base high-frequency trading market rates that are only a function of $\delta$ derived in 2006 by [Avellaneda & Stoikov](https://math.nyu.edu/~avellane/HighFrequencyTrading.pdf), then switched to a function of only $q$ derived in 2009 by [Mykland & Zhang](https://doi.org/10.3982/ECTA7417), and finally found a function of both derived in 2017 by [Toke & Yoshida](https://doi.org/10.1080/14697688.2016.1236210).
+We synthesize these functions to find the most robust and realistic model, 
 
 $$\lambda(s,\delta) = \exp\left( \vec{\beta} \cdot 
-\left[\ln(1 + q),\ (\ln(1 + q))^2,\ \ln(1 + \delta),\ (\ln(1 + \delta))^2,\ \ln(1+\delta+q) \right] \right)
-$$
+\left[\ln(1 + q),\ (\ln(1 + q))^2,\ \ln(1 + \delta),\ (\ln(1 + \delta))^2,\ \ln(1+\delta+q) \right] \right),$$
 
-
-
-
-Assume the rate of market orders that 
-
-1. Create an accurate model
- of how stock pricing dynamics change over time as a function of mid-price, spread, number of limit and market orders, etc. that is reflected
-2. Train an agent to learn the best way to place market and limit orders in the market in accordance with optimizing a utility function.
-
-We begin with the simplest assumptions for market dynamics and a utility function, beginning with the theoretical framework outlined in the seminal 2006 paper "[High-frequency trading in a limit order book](https://math.nyu.edu/~avellane/HighFrequencyTrading.pdf)" and moving to more complicated market and utility function models. We quickly realized that this model makes too many assumptions and pivoted into our own environment.
+where $\vec{\beta}$ contains the 6 parameters $\beta_i$ which we find through fitting stochastically to the SNP500 data.
 
 ## Organization
 

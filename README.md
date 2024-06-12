@@ -2,6 +2,11 @@
 Creating a market-making RL agent in the high-frequency trading setting for Stanford's CS234 final project. 
 Our full paper is found [here](https://github.com/user-attachments/files/15811478/CS234_Paper___HFT_Market_Making.3.pdf)
 
+Market-makers provide the liquidity of the stock market, allowing people to buy and sell stocks. Liquidity is provided as limit-orders in the form of **asks** that allow the market to buy stocks and **bids** that allow the market to sell stocks. As a market-maker is only one provider of liquidity among many for stock, the **midprice** of a stock is decoupled from any one market and evolves over time according to a stochastic Brownian motion. The **bids** and **asks** are centered around the midprice with a certain spread of $\delta_b$, $\delta_a$ respectively.
+
+
+
+
 Assume the rate of market orders that 
 
 1. Create an accurate model

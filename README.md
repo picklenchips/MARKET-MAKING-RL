@@ -1,7 +1,11 @@
 # MARKET-MAKING-RL
-Using reinforcement learning to make markets in the high-frequency trading setting.
+Creating a market-making RL agent in the high-frequency trading setting for Stanford's CS234 final project. 
+Our full paper is found [here](https://github.com/user-attachments/files/15811478/CS234_Paper___HFT_Market_Making.3.pdf)
 
-1. Use high-frequency trading data and market assumptions to create an accurate model of how stock pricing dynamics change over time as a function of mid-price, spread, number of limit and market orders, etc.
+Assume the rate of market orders that 
+
+1. Create an accurate model
+ of how stock pricing dynamics change over time as a function of mid-price, spread, number of limit and market orders, etc. that is reflected
 2. Train an agent to learn the best way to place market and limit orders in the market in accordance with optimizing a utility function.
 
 We begin with the simplest assumptions for market dynamics and a utility function, beginning with the theoretical framework outlined in the seminal 2006 paper "[High-frequency trading in a limit order book](https://math.nyu.edu/~avellane/HighFrequencyTrading.pdf)" and moving to more complicated market and utility function models. We quickly realized that this model makes too many assumptions and pivoted into our own environment.
@@ -52,7 +56,11 @@ Hyperparameters are passed around using a `Config` instance that is used to init
 
 ## TODO: 
 - implement more efficient gradients with sparse CSR or CSC arrays (`MaskedMarketMaker`) for faster running
-- incorporate more reward functions, such as the CARA final utility from (https://discovery.ucl.ac.uk/id/eprint/10116730/1/RLforHFMM.pdf)[Lim & Grose, 2018] and the various reward schema used in (https://arxiv.org/abs/2305.15821)[Guo, Lin, and Huang, 2023]
-- create full CUDA version
-- create full MPS version (M1)
+- incorporate testing of more reward functions, such as the CARA final utility from [Lim & Grose, 2018](https://discovery.ucl.ac.uk/id/eprint/10116730/1/RLforHFMM.pdf) and the various reward schema used in [Guo, Lin, and Huang, 2023](https://arxiv.org/abs/2305.15821).
+- parameter tune TD $\lambda$ eligibility traces
+- implement dynamically taking in the $p$ past trajectories and using more layers to generate a more robust policy
+- create full CUDA version that uses tensor operations whenever possible, so that larger batch numbers can be used for better, more robust policies
+  - create full MPS version (M1), which should just be changing the `.to(device)` line
+- actually find the correct parameters for the market transaction rate instead of just eyeballing from Desmos
+
 

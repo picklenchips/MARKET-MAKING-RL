@@ -52,7 +52,7 @@ Hyperparameters are passed around using a `Config` instance that is used to init
 
 ## TODO: 
 - implement more efficient gradients with sparse CSR or CSC arrays (`MaskedMarketMaker`) for faster running
-- incorporate more reward functions, such as the CARA final utility from (Lim & Grose, 2018)[https://discovery.ucl.ac.uk/id/eprint/10116730/1/RLforHFMM.pdf] and the various reward schema used in (Guo, Lin, and Huang, 2023)[https://arxiv.org/abs/2305.15821]
+- incorporate more reward functions, such as the CARA final utility from [https://discovery.ucl.ac.uk/id/eprint/10116730/1/RLforHFMM.pdf](Lim & Grose, 2018) and the various reward schema used in [https://arxiv.org/abs/2305.15821](Guo, Lin, and Huang, 2023)
 - create full CUDA version
 - create full MPS version (M1)
 

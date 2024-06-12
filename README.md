@@ -2,11 +2,13 @@
 Creating a market-making RL agent in the high-frequency trading setting for Stanford's CS234 final project. 
 Our full paper is found [here](https://github.com/user-attachments/files/15811478/CS234_Paper___HFT_Market_Making.3.pdf)
 
-Market-makers provide the liquidity of the stock market, allowing people to buy and sell stocks. Liquidity is provided as limit-orders in the form of **asks** that allow the market to buy stocks and **bids** that allow the market to sell stocks. As a market-maker is only one provider of liquidity among many for stock, the **midprice** of a stock is decoupled from any one market and evolves over time according to a stochastic Brownian motion. The **bids** and **asks** are centered around the midprice with a certain spread of $\delta_b$, $\delta_a$ respectively:
+Market-makers provide the liquidity of the stock market, allowing people to buy and sell stocks. 
+Liquidity is provided as "limit orders" in the form of **asks** that allow the market to buy stocks and **bids** that allow the market to sell stocks.
+A limit order has both a price and a number of stocks, and a **limit order book (LOB)** contains all bids and asks provided by a market maker.
+As a market-maker is only one provider of liquidity among many for stock, the **midprice** of a stock is decoupled from any one market and evolves over time according to a stochastic Brownian motion. The **bids** and **asks** are centered around the midprice with a certain spread of $\delta_b$, $\delta_a$ respectively:
 
-<div style="text-align: center">
-<img width=50% alt="LOB (1)" margin-left=auto margin-righ=auto
-  src="https://github.com/picklenchips/MARKET-MAKING-RL/assets/77514590/5ee3a6f3-f357-4c97-833e-840bc96d7b17"></div>
+<img width=80% alt="limit-order book" margin-left=auto margin-righ=auto
+  src="https://github.com/picklenchips/MARKET-MAKING-RL/assets/77514590/5ee3a6f3-f357-4c97-833e-840bc96d7b17">
 
 
 

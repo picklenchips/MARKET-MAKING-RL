@@ -26,6 +26,7 @@ class Config:
                  past_obs=2, 
                  # network parameters
                  obs_dim=5, act_dim=4, rew_dim=2, n_layers=2, layer_size=10, 
+                 n_obs = 1,  # number of past observations to use for policy
                  # learning parameters
                  lr=0.001, discount=0.9999, lambd=0.9, 
                  # reward / return parameters
@@ -47,13 +48,15 @@ class Config:
         #TODO: generalize TD lambda to past obs?
         self.past_obs = past_obs  # number of past observations to include
         ######### NETWORK PARAMETERS ##########
-        self.obs_dim = obs_dim  # policy input
+        self.n_obs = n_obs  # number of past observations to use for policy
+        # policy input is 4 * n_obs + 1, as we add timeleft after observing n_obs observations
+        self.obs_dim = obs_dim*n_obs + 1  # policy input
         self.act_dim = act_dim  # policy output
         self.rew_dim = rew_dim   # reward additional info
         self.val_dim = self.rew_dim + self.obs_dim  # baseline network input
         self.n_layers = n_layers
         self.layer_size = layer_size
-        self.network_out = INITSAVE+"/"+"-".join(map(str, [self.obs_dim, self.act_dim, self.n_layers, self.layer_size]))+"_init-pol.pth"
+        self.network_out = INITSAVE+"/"+str(self.n_obs)+"*"+"-".join(map(str, [self.obs_dim, self.act_dim, self.n_layers, self.layer_size]))+"_init-pol.pth"
         ######### RETURN PARAMETERS ##########
         self.lr = lr
         self.discount = discount     # discount for computing returns
@@ -363,6 +366,7 @@ def get_config(args: argparse.ArgumentParser) -> Config:
     if args.ne: config.ne = args.ne
     if args.book_size: config.nstocks = args.book_size
     if args.update_freq: config.update_freq = args.update_freq
+    if args.n_obs: config.n_obs = args.n_obs
     
     config.set_name()
     # see if there is an existing plot w the same thing

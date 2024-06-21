@@ -114,10 +114,14 @@ class UniformMarketMaker():
             T = nt*dt
         nbatch = nb if nb else self.config.nb
         val_dim = self.config.val_dim
-        obs_dim = self.config.obs_dim
         act_dim = self.config.act_dim
+        n_obs = self.config.n_obs
+        obs_dim = self.config.obs_dim
+        # obs_dim = n_obs * 4 + 1
+        assert obs_dim == n_obs * 4 + 1
         
         trajectories = np.zeros((nbatch, nt, val_dim))
+        observations = np.zeros((nbatch, nt + n_obs - 1, 4))
         actions = np.zeros((nbatch, nt, act_dim))
         rewards = np.zeros((nbatch, nt))
         values  = np.zeros((nbatch,))
@@ -133,11 +137,18 @@ class UniformMarketMaker():
             W = self.market.W; I = self.market.I; midprice = self.market.midprice
             # timestep
             terminated = False
-            for t in range(nt):
+            # for self.n_obs
+            starting_state = self.market.state()
+            for t in range(n_obs-1):
+                observations[b, t] = starting_state
+            for t in range(n_obs - 1, nt):
                 time_left = (T - t*dt,)
-                state = self.market.state() + time_left
+                observations[b, t] = self.market.state()
+                # observation is the 
+                cur_state = self.market.state() + time_left
+                state = np.append(observations[b, t-n_obs+1:t+1], time_left)
                 if self.do_ppo:  # need to get log probability directly
-                    action, logprob = self.P.policy.act(np.array(state), return_log_prob=True)
+                    action, logprob = self.P.policy.act(state, return_log_prob=True)
                     logprobs[b, t] = logprob
                     self.market.submit(*action)
                 else:
@@ -158,7 +169,7 @@ class UniformMarketMaker():
                     break
                 reward_state = (dW, dI) + time_left
                 rewards[b, t] = self.market.reward(reward_state)
-                trajectories[b, t] = state + (dW, dI)
+                trajectories[b, t] = cur_state + (dW, dI)
                 W += dW; I += dI
                 if track_all:
                     wealth[b, t] = W

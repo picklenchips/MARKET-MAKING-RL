@@ -19,7 +19,7 @@ class Market(BaseMarket):
         self.c = 1/self.max_t    # how much we negatively weigh time
 
     def reward(self, r_state):
-        """ 
+        """ Input: r_state = (dW, dI, time_left)
         set the immediate reward for the agent every dt
         If we do just dW here, the sum of these actions should give
             us the best dW. 
@@ -38,7 +38,7 @@ class Market(BaseMarket):
         If we really wanted to, we could just 
             turn this in to an intermediate reward function fully, where we just learn the function, 
             - dW + dI*self.book.midprice
-        Then the inetermediate reward is really just a baby version 
+        Then the intermediate reward is really just a baby version 
             of the true reward and the final reward. However, should 
             we then doubly inforce the final reward as W? 
         """
@@ -72,7 +72,10 @@ class Market(BaseMarket):
         return reward
         
     def final_reward(self, wealth, inventory, midprice):
-        return wealth+inventory*midprice
+        """ W_T + I_T * S_T is the "actual" final value of the market
+        - we could consider some other function of inventory, midprice that isn't directly 
+          multiplicative, as we can't liquidate all of the inventory at the current midprice, but Chalas """
+        return wealth + inventory*midprice
         
     # --- OLD STUFF --- #
     def avellaneda_lambda_buy(self, delta_a):

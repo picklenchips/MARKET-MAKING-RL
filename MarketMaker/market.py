@@ -123,7 +123,9 @@ class BaseMarket():
 # --- ENVIRONMENT / DYNAMICS --- #
     def lambda_buy(self, delta, q):
         if not q: return 0
-        lambdaa = np.exp(self.betas[0]+self.betas[1]*np.log(1+delta)+self.betas[2]*np.log(1+delta)**2+self.betas[3]*np.log(1+q)+self.betas[4]*np.log(1+q)**2+self.betas[5]*np.log(delta+1+q))
+        lambdaa = np.exp(self.betas[0]+self.betas[1]*np.log(1+delta)+self.betas[2]*np.log(1+delta)**2
+                         +self.betas[3]*np.log(1+q)+self.betas[4]*np.log(1+q)**2
+                         +self.betas[5]*np.log(delta+1+q))
         return lambdaa
     
     def lambda_sell(self, delta, q):
@@ -142,7 +144,7 @@ class BaseMarket():
                 nbuy  = np.random.poisson(lambda_buy)
                 nsell = np.random.poisson(lambda_sell)
             except ValueError:
-                # the lambda function has somehow killed itself
+                # lambda is invalid (negative, complex, infinite, or NaN)
                 if plot:
                     return ValueError, lambda_sell, lambda_buy, (nsell, self.book.high_bid, nbuy, self.book.low_ask)
                 return ValueError, lambda_sell, lambda_buy
@@ -173,7 +175,9 @@ class BaseMarket():
             if len(state) < 3: raise TypeError
         except TypeError:  # resample state
             state = self.state()
-        if len(state) == 4:  # default "naive" policy
+        if policy:
+            action = policy(state)
+        elif len(state) == 4:  # default "naive" policy
             rate = 3/4
             n_bid, delta_b, n_ask, delta_a = state
             delta_b_new = np.random.normal(delta_b, delta_b/4)
@@ -195,9 +199,7 @@ class BaseMarket():
             n_ask = np.random.poisson(n_ask)
             action = (n_bid, self.book.midprice - bid_price, n_ask, ask_price - self.book.midprice)
         else:  # just run the network on the state!
-            if not policy:
-                raise NotImplementedError("Policy network is not defined!")
-            action = policy(state)
+            raise NotImplementedError("Policy is not defined!")
         self.submit(*action)
         return action
     

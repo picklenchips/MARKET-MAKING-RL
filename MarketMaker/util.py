@@ -187,6 +187,7 @@ def plot_trajectory(x, y, ax, color):
 def plot_WIM(paths, dt: float, title='', savename='', isfinal=True):
     """ plot data from a batch of trajectories
     Inputs: (nbatch x nt) np.ndarrays """
+    isfinal = True
     if isfinal:
         FIGSIZE = (10,9)
         mpl.rcParams['font.size'] = textsize

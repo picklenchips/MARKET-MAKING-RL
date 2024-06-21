@@ -35,6 +35,7 @@ parser.add_argument("--td", "--TD", "-td", action='store_true')
 parser.add_argument("--good-results", help='update plots for all good results', action='store_true')
 parser.add_argument('--book-size', '-bs', help='size of the initial book', type=int)
 parser.add_argument('--update-freq', '-uf', help='update frequency of policy', type=int)
+parser.add_argument('--n-obs', '-no', help='number of observations to use in each state', type=int)
 
 
 if __name__ == "__main__":

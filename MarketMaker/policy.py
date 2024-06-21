@@ -88,7 +88,6 @@ class GaussianPolicy(BasePolicy, nn.Module):
             means = means._masked_data.nan_to_num(0)
         return ptd.MultivariateNormal(means, scale_tril=torch.diag(torch.exp(self.log_std)))
 
-
 ##########################################
 
 class BaselineNetwork(nn.Module):
@@ -144,6 +143,7 @@ class PolicyGradient():
         self.do_clip = self.config.do_clip
         self.entropy_coef = self.config.entropy_coef
         self.do_ppo = self.config.do_ppo
+        self.lambd = self.config.lambd
         # option to intialize policy on startup? why not
         if market:
             self.init_policy(market)
@@ -174,7 +174,8 @@ class PolicyGradient():
         return OrderedDict(layers)
 
     def init_policy(self, market: Market, ne=1000,nb=100, new_train=False):
-        """ Initialize self.policy network to match intial market """
+        """ Initialize self.policy network to match intial market 
+        if new_train, will also match policy to the initial state of the market """
         network = build_mlp(self.config.obs_dim, self.config.act_dim, self.config.n_layers, self.config.layer_size)
         self.policy = CategoricalPolicy(network) if self.config.discrete else GaussianPolicy(network, self.config.act_dim)
         self.optimizer = torch.optim.Adam(params=self.policy.parameters(),lr=self.config.lr)
@@ -191,16 +192,24 @@ class PolicyGradient():
             return f'initialized policy with default state_dict to {self.config.network_out}'
         save_after = ne/20
         self.optimizer = torch.optim.Adam(params=self.policy.parameters(),lr=0.02)      
+        obs_dim = self.config.obs_dim
+        act_dim = self.config.act_dim
+        n_obs = self.config.n_obs
         with tqdm(total=ne) as pbar:
             pbar.set_description("Initializing Policy")
             for i in range(ne):
                 states = []; actions = []
-                states = np.empty((nb, self.config.obs_dim))
-                actions = np.empty((nb, self.config.act_dim))
+                states = np.empty((nb, obs_dim))
+                actions = np.empty((nb, act_dim))
+                past_states = tuple()
                 for b in range(nb):
                     market.reset()
                     state = market.state()
-                    states[b] = state + (self.config.max_t,)
+                    time_left = (self.config.max_t,)
+                    if not len(past_states):
+                        past_states = (state,) * n_obs + time_left
+                    past_states = past_states[4:-1] + state + time_left
+                    states[b] = past_states
                     #action = market.act(state)
                     actions[b] = state
                 self.match(states, actions)
